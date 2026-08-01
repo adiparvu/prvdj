@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 5._
+_Last updated: Sprint 6._
 
 ## Sprint 0 — Foundation
 
@@ -85,6 +85,17 @@ _Last updated: Sprint 5._
 | `prv-analysis` beat and downbeat tracking | Completed | Verified | Dynamic programme; coasts through a breakdown and recovers |
 | `prv-analysis` fitted beat grid | Completed | Verified | Tempo accurate to a hundredth of a beat per minute over 192 beats |
 | Central confidence scale | Completed | Verified | One mapping to Master Prompt #25's five labels, used everywhere |
+
+## Sprint 6 — Audio analysis: tone, loudness and structure
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-analysis` chroma extraction | Completed | Verified | Spectral peaks only, normalised per frame; drums do not colour the profile |
+| `prv-analysis` key detection | Completed | Verified | Krumhansl-Kessler profiles; the relative key is an alternative, not an error |
+| `prv-analysis` loudness to BS.1770 | Completed | Verified | Derived coefficients reproduce the standard's table; gated integrated, range |
+| `prv-analysis` true peak | Completed | Verified | Polyphase band-limited interpolation, not linear |
+| `prv-analysis` structure segmentation | Completed | Verified | Bar-resolution checkerboard novelty; no boundaries on material with none |
+| `prv-analysis` track profile | Completed | Verified | Stages versioned independently; staleness propagates to dependants |
 
 ## Not started
 

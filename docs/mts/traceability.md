@@ -87,7 +87,15 @@ did not have would be worse than no row at all.
 | Onsets found where an envelope detector would fail | MP#20 | `prv-analysis::NoveltyCurve` | `the_curve_survives_a_twenty_decibel_level_change`, `a_sustained_tone_has_no_onsets_in_its_interior` | **Verified** |
 | Analysis produces the same result on every platform | ADR-0006 | `prv-analysis::fft` | transform written in-crate, checked against the direct sum; `estimation_is_reproducible`, `tracking_is_reproducible` | **Verified** |
 | Analysis hands over to exact integer time | MP#18, MS#002 | `prv-analysis::BeatEstimate::to_beat_grid` | `a_beat_grid_is_anchored_on_the_first_downbeat` | **Verified** |
-| Key, structure and loudness detection | MP#20 | — | — | Not started |
+| Key detection | MP#20 | `prv-analysis::key` | `a_c_major_scale_is_detected_as_c_major_or_its_relative`, `transposing_a_profile_transposes_the_key` | **Verified** |
+| Key ambiguity surfaced rather than hidden | MP#20, MP#25 | `prv-analysis::KeyEstimate::relative` | `the_relative_is_always_offered`, `a_flat_profile_is_not_given_a_confident_key` | **Verified** |
+| Loudness to a published standard | MP#3A, MP#20 | `prv-analysis::loudness` | `a_full_scale_kilohertz_tone_reads_the_standard_value`, `the_derived_coefficients_reproduce_the_standard_table` | **Verified** |
+| Loudness usable for matching two tracks | MP#3A | `prv-analysis::Loudness::gain_to_reach` | `silence_before_a_track_does_not_make_it_quieter`, `the_gain_to_a_target_is_the_difference` | **Verified** |
+| Inter-sample peaks detected | MP#3A, MP#3C | `prv-analysis::Loudness::true_peak_dbfs` | `the_true_peak_catches_what_the_sample_peak_misses` | **Verified** |
+| Structure detection | MP#20, MP#21 | `prv-analysis::structure` | `boundaries_land_on_the_arrangement_changes`, `a_track_with_no_arrangement_reports_no_boundaries` | **Verified** |
+| Sections usable as transition points | MP#3B, MP#21 | `prv-analysis::Structure::transition_points` | `the_quiet_sections_are_recognised_as_places_to_mix` | **Verified** |
+| Each analysis stage versioned independently | MP#20 | `prv-analysis::Stage::version` | `staleness_propagates_to_everything_downstream`, `the_dependency_order_has_no_cycles_and_matches_the_run_order` | **Verified** |
+| A stage that finds nothing says so | MP#25 | `prv-analysis::TrackProfile` | `a_stage_that_finds_nothing_is_absent_rather_than_uncertain`, `a_partial_analysis_is_a_success_not_a_failure` | **Verified** |
 | Transition scoring at import | MP#20 | — | — | Not started |
 | Mix planner, versions A/B/C | MP#3B | — | — | Not started |
 | Learning profile | MP#5 | — | — | Not started |

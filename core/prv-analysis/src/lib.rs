@@ -43,8 +43,14 @@
 //! | [`onset`] | Where does something start? |
 //! | [`tempo`] | How fast, and how sure? |
 //! | [`beats`] | Where exactly is each beat, and which one begins the bar? |
+//! | [`chroma`] | Which of the twelve pitch classes does the music use? |
+//! | [`key`] | Which key, and how sure? |
+//! | [`loudness`] | How loud, to a standard that means the same everywhere? |
+//! | [`structure`] | Where do the sections begin and end? |
+//! | [`profile`] | All of it together, each stage versioned on its own |
 //! | [`confidence`] | How is "how sure" said in one way everywhere? |
 
+pub mod chroma;
 mod confidence;
 mod error;
 mod fft;
@@ -57,12 +63,18 @@ mod window;
 mod testing;
 
 pub mod beats;
+pub mod key;
+pub mod loudness;
+pub mod profile;
+pub mod structure;
 pub mod tempo;
 
+pub use chroma::{Chroma, ChromaBuilder};
 pub use confidence::{Confidence, ConfidenceLabel};
 pub use error::AnalysisError;
 pub use fft::{Complex, Fft, RealFft};
 pub use onset::{NoveltyCurve, Onset};
+pub use profile::{analyse, Stage, TrackProfile, Versioned};
 pub use spectrum::{
     SpectrumFrame, Stft, RHYTHM_HOP_SIZE, RHYTHM_WINDOW_SIZE, TONAL_HOP_SIZE, TONAL_WINDOW_SIZE,
 };
