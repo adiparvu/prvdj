@@ -204,6 +204,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-timeline"
+version = "0.1.0"
+dependencies = [
+ "prv-project",
+ "prv-time",
+]
+
+[[package]]
 name = "prv-transport"
 version = "0.1.0"
 dependencies = [

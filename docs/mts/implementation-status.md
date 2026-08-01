@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 7._
+_Last updated: Sprint 8._
 
 ## Sprint 0 — Foundation
 
@@ -107,6 +107,16 @@ _Last updated: Sprint 7._
 | `prv-mix` objective and evidence | Completed | Verified | Six weighted components, each retained with the decision |
 | `prv-mix` beam search | Completed | Verified | Deterministic; follows the energy shape; no track repeats |
 | `prv-mix` distinct alternatives | Completed | Verified | Version A/B/C differ by construction, not by sampling |
+
+## Sprint 8 — The timeline
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-timeline` parameter addressing | Completed | Verified | Closes the limitation open since Sprint 1; survives storage and reordering |
+| `prv-timeline` parameter descriptors | Completed | Verified | Range, unit and curve; normalisation round-trips on every curve |
+| `prv-timeline` automation lanes | Completed | Verified | Binary-search evaluation, allocation-free; no shape overshoots |
+| `prv-timeline` clips and lanes | Completed | Verified | Trimming the front does not slide the audio; splitting changes no sound |
+| `prv-timeline` editing with snapping | Completed | Verified | Opt-out per edit rather than a global mode; overlap refused, not resolved |
 
 ## Not started
 

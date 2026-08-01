@@ -142,7 +142,14 @@ did not have would be worse than no row at all.
 | Missing and moved files lose no organisation | MS#001 | `prv-library::TrackStatus` | `removing_hides_a_track_without_losing_what_the_user_built`, `a_missing_track_still_appears_so_the_user_can_find_it` | **Verified** |
 | Overlapping collections | MS#001 | `prv-library` | `collections_overlap_freely` | **Verified** |
 | Nothing permanently deleted by default | MP#9 | `prv-library::remove` | `a_removed_track_can_be_restored_with_everything_intact` | **Verified** |
-| Timeline, cloud, UI | MP#21, MP#24, MP#17 | — | — | Not started |
+| A parameter can be named, stored and re-found | MP#21, MP#23, ADR-0003 | `prv-timeline::ParameterAddress` | `an_address_survives_being_written_down_and_read_back`, `reordering_effects_re_addresses_only_what_moved` | **Verified** |
+| Parameter identifiers from plugins are validated | MP#23, MP#26 | `prv-timeline::PluginParameterId` | `a_plugin_identifier_is_validated_before_it_is_stored` | **Verified** |
+| Automation evaluates on the audio thread | MP#21, ADR-0002 | `prv-timeline::AutomationLane::value_at` | binary search, no allocation; `evaluation_is_correct_across_a_large_lane` | **Verified** |
+| No automation curve overshoots its points | MP#3A, MP#21 | `prv-timeline::Interpolation` | `no_shape_ever_leaves_the_range_its_points_defined`, `every_shape_is_monotone` | **Verified** |
+| Editing snaps to the musical grid | MP#21 | `prv-timeline::Snap` | `an_added_clip_snaps_to_the_grid` | **Verified** |
+| Editing is non-destructive | MP#3C, MP#9, MP#21 | `prv-timeline::Timeline` | `trimming_the_front_does_not_slide_the_audio`, `splitting_is_structural_and_changes_no_sound` | **Verified** |
+| A destructive edit is refused, not resolved | MP#9, MP#21 | `prv-timeline::EditError::Overlap` | `overlapping_clips_on_one_lane_are_refused_rather_than_truncated` | **Verified** |
+| Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself
 
