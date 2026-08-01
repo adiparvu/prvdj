@@ -180,6 +180,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-waveform"
+version = "0.1.0"
+dependencies = [
+ "prv-rt",
+ "prv-time",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

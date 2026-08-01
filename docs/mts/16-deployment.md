@@ -10,7 +10,7 @@ release engineering scheduled for Phase 8.**
 | Format check | Consistent formatting before any diff is read |
 | Static analysis, warnings denied | The panic-capable constructs the realtime contract forbids |
 | Build, all targets | No broken build reaches the branch |
-| Tests | 111 tests, plus one documentation example intentionally not executed |
+| Tests | 265 tests, plus one documentation example intentionally not executed |
 | **Realtime contract, release mode** | Zero allocation on the render path in the configuration that ships |
 | Documentation build, warnings denied | No undocumented public interface |
 | Architecture rules | Core purity, unsafe confinement, no placeholder markers, crate documentation, decision-log integrity |

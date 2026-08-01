@@ -30,8 +30,9 @@ depends on a module that does not yet exist.
    gain, Linkwitz-Riley three-band equaliser with true kill, filter sweep. All
    under the allocation gate.
 3. ~~**Beat grid and multi-segment tempo map.**~~ Done.
-4. **Waveform tile generation.** Tile model, resolutions, cache invalidation by
-   generation version (Module Specification #003).
+4. ~~**Waveform tile generation.**~~ Done — tile model, five-band resolution
+   ladder, resumable generation, versioned invalidation, allocation-free
+   viewport rendering.
 5. **Library index and import pipeline.** Restartable stages with durable state,
    as Master Prompt #7 requires.
 6. **Project operation log.** The mechanism from ADR-0003 on which undo,

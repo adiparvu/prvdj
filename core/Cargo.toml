@@ -6,6 +6,7 @@ members = [
     "prv-harmony",
     "prv-transport",
     "prv-dsp",
+    "prv-waveform",
 ]
 
 [workspace.package]

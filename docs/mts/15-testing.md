@@ -13,8 +13,9 @@ Governed by Master Prompt #27. Quality is not a phase.
 | `prv-dsp` | 46 | Filter responses measured, not derived; the equaliser is flat at unity to within 0.6 dB; a kill is better than −30 dB; the filter stays stable under a fast sweep |
 | `prv-dsp` integration | 2 | **A full channel strip under constant control movement allocates nothing** across 25 000 blocks, and chain dispatch adds nothing |
 | `prv-harmony` | 30 | All 24 published Camelot positions reproduced against an external chart; safety ordering; no key is ever stranded without a safe destination |
+| `prv-waveform` | 38 | Tiles report true extremes; chunk size does not change the result; aggregation preserves transients; level selection never upscales |
 | `tokengen` | 4 | Token generation and schema validation |
-| **Total** | **227** | all passing, all gated on every pull request |
+| **Total** | **265** | all passing, all gated on every pull request |
 
 ## Practices that matter more than the count
 

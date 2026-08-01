@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 1._
+_Last updated: Sprint 2._
 
 ## Sprint 0 — Foundation
 
@@ -45,6 +45,14 @@ _Last updated: Sprint 1._
 | `prv-dsp` filter | Completed | Verified | Exponential sweep, stable under fast modulation |
 | Allocation gate extended to the signal path | Completed | Verified | A full channel strip under control movement |
 | Requirements traceability matrix | Completed | — | Every requirement linked to its code and test |
+
+## Sprint 2 — Waveform
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-waveform` tile model | Completed | Verified | Min, max and energy; clipping detected; damaged frames skipped |
+| `prv-waveform` resolution ladder and builder | Completed | Verified | Five bands, each built from the audio; chunk-size independent |
+| `prv-waveform` viewport rendering | Completed | Verified | Allocation-free into a caller buffer; never upscales |
 
 ## Not started
 

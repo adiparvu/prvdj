@@ -13,7 +13,7 @@ I infrastructure, P presentation.
 | `master-bus` | Master chain, limiter, true peak, LUFS | D | `core/prv-dsp` | MP#3A, MP#3C |
 | `playback-transport` | Playback states, transport operations, loops, slip | A | `core/prv-transport` | MS#002 |
 | `audio-analysis` | Tempo, key, structure, energy, loudness, spectrum | D | `core/prv-analysis` | MP#20, MP#3A |
-| `waveform` | Tile generation, resolutions, cache, viewport maths | D | `core/prv-waveform` | MS#003 |
+| `waveform` | Tile generation, resolutions, viewport maths | D | `core/prv-waveform` | MS#003 |
 | `music-library` | Import, metadata, playlists, collections, search, duplicates | D+A | `core/prv-library` | MS#001 |
 | `project` | Operation log, materialisation, versions, branches | D | `core/prv-project` | MP#9, MP#21, ADR-0003 |
 | `timeline` | Timeline objects, lanes, editing operations, snapping | D | `core/prv-timeline` | MP#21 |

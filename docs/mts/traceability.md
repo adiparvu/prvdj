@@ -96,7 +96,14 @@ did not have would be worse than no row at all.
 | Colour never carries meaning alone | MP#8, MP#16 | `design/tokens/tokens.json` | every semantic colour is paired in its component | **Decided** |
 | Motion degrades under reduced motion | MP#8, MP#16 | `MotionToken::reducedMotion` | generated and compiled | **Verified** |
 | Entitlements never reach the engines | MP#29 | module index | no engine crate depends on licensing | **Enforced** |
-| Library, timeline, waveform, cloud, UI | MS#001, MS#003, MP#21, MP#24, MP#17 | — | — | Not started |
+| Waveform tiles at several resolutions | MS#003 | `prv-waveform` | `every_level_is_exact_rather_than_derived_from_the_one_below` | **Verified** |
+| Never upscale coarse waveform data | MS#003 | `prv-waveform::level_for` | `level_selection_never_upscales` | **Verified** |
+| Waveform generation is resumable | MS#003, MP#7 | `prv-waveform::WaveformBuilder` | `chunking_does_not_change_the_result` | **Verified** |
+| Waveform invalidation by generation version | MP#20, MS#003 | `prv-waveform::GenerationVersion` | `versions_are_compared_exactly` | **Verified** |
+| The renderer never processes invisible regions | MS#003 | `prv-waveform::render` | `rendering_writes_exactly_the_requested_columns` | **Verified** |
+| Rendering allocates nothing per frame | MP#4, MS#003 | `prv-waveform::render` | caller-supplied buffer; no allocation in the call | **Verified** |
+| Clipping detected and located | MP#20 | `prv-waveform::Tile::is_clipped` | `clipping_is_detected_at_full_scale` | **Verified** |
+| Library, timeline, cloud, UI | MS#001, MP#21, MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself
 
