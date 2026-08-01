@@ -153,6 +153,11 @@ did not have would be worse than no row at all.
 | Values from a foreign log are validated at the fold | MP#24, MP#26 | `prv-project::ProjectState::apply` | `an_automation_value_from_the_log_is_clamped_before_it_is_stored` | **Verified** |
 | The timeline is built from the document | ADR-0003, ADR-0007 | `prv-timeline::Timeline::from_project` | `a_timeline_is_built_from_the_materialised_document` | **Verified** |
 | An unopenable project is never the outcome | MP#9, MP#24 | `prv-timeline::Timeline::from_project` | `a_document_the_timeline_cannot_hold_is_reported_rather_than_clamped` | **Verified** |
+| A generated mix is editable like a hand-made one | MP#3B, MP#9 | `prv-mix::render` | `applying_the_operations_produces_the_set_and_undoing_them_removes_it` | **Verified** |
+| Transitions overlap rather than abut | MP#3B, MP#21 | `prv-mix::render` | `tracks_overlap_rather_than_abutting` | **Verified** |
+| The technique is explained by the same evidence as the choice | ADR-0006 | `prv-mix::render::choose_technique` | `the_technique_follows_the_evidence`, `better_evidence_never_produces_a_more_cautious_technique` | **Verified** |
+| Generated transitions are editable | MP#3B, MP#21 | `prv-mix::render::automation_for` | `every_transition_produces_automation_on_both_lanes` | **Verified** |
+| Identity allocation stays with the caller | MP#24 | `prv-mix::render::PlacementIds` | `identifiers_come_from_the_caller_and_never_repeat` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

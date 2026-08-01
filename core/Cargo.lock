@@ -179,7 +179,9 @@ version = "0.1.0"
 dependencies = [
  "prv-analysis",
  "prv-harmony",
+ "prv-project",
  "prv-time",
+ "prv-timeline",
 ]
 
 [[package]]

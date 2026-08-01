@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 9._
+_Last updated: Sprint 10._
 
 ## Sprint 0 — Foundation
 
@@ -127,6 +127,15 @@ _Last updated: Sprint 9._
 | Automation operations in the log | Completed | Verified | Undo, versions, branching and sync inherited rather than reimplemented |
 | Automation in the state fold | Completed | Verified | Values clamped at the fold, once, where a foreign log arrives |
 | `Timeline::from_project` | Completed | Verified | Unholdable clips reported, never clamped into a lane the user did not choose |
+
+## Sprint 10 — A plan becomes edits
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-mix::render` transition techniques | Completed | Verified | Derived from the planner's evidence, not chosen; ordering survives recalibration |
+| `prv-mix::render` operation emission | Completed | Verified | An AI mix is an ordinary edit: undoable, branchable, editable, with no code for it |
+| Overlap length from evidence | Completed | Verified | Quantised to whole bars; better matches given more room |
+| Transition automation | Completed | Verified | Every technique expressed as automation, so a generated transition is editable |
 
 ## Not started
 

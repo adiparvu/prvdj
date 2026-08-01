@@ -11,7 +11,9 @@ repository.workspace = true
 [dependencies]
 prv-analysis = { path = "../prv-analysis" }
 prv-harmony = { path = "../prv-harmony" }
+prv-project = { path = "../prv-project" }
 prv-time = { path = "../prv-time" }
+prv-timeline = { path = "../prv-timeline" }
 
 [lints]
 workspace = true

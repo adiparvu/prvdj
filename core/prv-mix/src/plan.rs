@@ -162,6 +162,19 @@ impl MixPlan {
             })
     }
 
+    /// An empty plan, for exercising guards that the search cannot reach.
+    ///
+    /// `cfg(test)` because a plan with no tracks is not a state the planner can
+    /// produce — but a guard with no test is a guard nobody has checked.
+    #[cfg(test)]
+    pub(crate) const fn empty() -> Self {
+        Self {
+            tracks: Vec::new(),
+            duration: Frames::ZERO,
+            score: 0.0,
+        }
+    }
+
     /// The set of tracks used, for comparing plans.
     fn track_set(&self) -> BTreeSet<TrackId> {
         self.tracks.iter().map(|track| track.id).collect()

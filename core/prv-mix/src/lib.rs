@@ -52,6 +52,7 @@
 //! | [`candidate`] | What does the planner know about a track? |
 //! | [`transition`] | Is this move allowed, and how good is it? |
 //! | [`plan`] | Which ordering of tracks is best? |
+//! | [`render`] | What edits turn that ordering into a mix? |
 //!
 //! # Example
 //!
@@ -86,9 +87,13 @@ mod num;
 pub mod candidate;
 pub mod goal;
 pub mod plan;
+pub mod render;
 pub mod transition;
 
 pub use candidate::{Candidate, MixPoint, MixPointRole, TrackId};
 pub use goal::{Creativity, EnergyShape, Goal};
 pub use plan::{plan, MixPlan, PlanError, PlannedTrack};
+pub use render::{
+    render, PlacementIds, RenderError, RenderedMix, RenderedTransition, Technique, TechniqueChoice,
+};
 pub use transition::{Component, Rejection, ScoreComponents, TransitionScore};
