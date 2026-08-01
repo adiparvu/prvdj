@@ -97,7 +97,15 @@ did not have would be worse than no row at all.
 | Each analysis stage versioned independently | MP#20 | `prv-analysis::Stage::version` | `staleness_propagates_to_everything_downstream`, `the_dependency_order_has_no_cycles_and_matches_the_run_order` | **Verified** |
 | A stage that finds nothing says so | MP#25 | `prv-analysis::TrackProfile` | `a_stage_that_finds_nothing_is_absent_rather_than_uncertain`, `a_partial_analysis_is_a_success_not_a_failure` | **Verified** |
 | Transition scoring at import | MP#20 | — | — | Not started |
-| Mix planner, versions A/B/C | MP#3B | — | — | Not started |
+| Mix planner | MP#3B, ADR-0006 | `prv-mix::plan` | `a_plan_reaches_the_requested_length_without_repeating_a_track`, `tracks_are_laid_end_to_end_without_gaps` | **Verified** |
+| Safety rules are guarantees, not tendencies | MP#3B | `prv-mix::transition::Rejection` | `a_clashing_key_is_not_a_low_score_but_no_candidate_at_all`, `no_plan_contains_a_move_that_violates_a_hard_constraint` | **Verified** |
+| Creativity widens soft limits only | MP#3B | `prv-mix::Creativity` | `creativity_unlocks_risky_harmony_and_nothing_beyond_it` | **Verified** |
+| The set follows the requested energy shape | MP#3B, MP#12 | `prv-mix::EnergyShape` | `the_set_follows_the_energy_shape_it_was_asked_for` | **Verified** |
+| Versions A/B/C are genuinely different | MP#3B | `prv-mix::plan::distinct` | `the_alternatives_are_genuinely_different_sets` | **Verified** |
+| The same inputs produce the same set | MP#27, ADR-0006 | `prv-mix::plan` | `planning_is_reproducible` | **Verified** |
+| Explanations render the actual arithmetic | ADR-0006, MP#25 | `prv-mix::TransitionScore` | `every_move_carries_the_evidence_that_produced_it` | **Verified** |
+| An unanswerable request explains what was missing | MP#10, MP#25 | `prv-mix::PlanError` | `a_library_outside_the_tempo_range_says_so`, `a_short_set_is_returned_rather_than_refused` | **Verified** |
+| Full musical capability offline | MP#1, MP#26, ADR-0006 | `prv-mix::Goal` | the planner has no network dependency, enforced by architecture rule 1 | **Enforced** |
 | Learning profile | MP#5 | — | — | Not started |
 | Agent registry and orchestration | MP#6, MP#19 | — | — | Not started |
 

@@ -10,6 +10,7 @@ members = [
     "prv-project",
     "prv-library",
     "prv-analysis",
+    "prv-mix",
 ]
 
 [workspace.package]

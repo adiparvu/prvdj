@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 6._
+_Last updated: Sprint 7._
 
 ## Sprint 0 — Foundation
 
@@ -96,6 +96,17 @@ _Last updated: Sprint 6._
 | `prv-analysis` true peak | Completed | Verified | Polyphase band-limited interpolation, not linear |
 | `prv-analysis` structure segmentation | Completed | Verified | Bar-resolution checkerboard novelty; no boundaries on material with none |
 | `prv-analysis` track profile | Completed | Verified | Stages versioned independently; staleness propagates to dependants |
+
+## Sprint 7 — The mix planner
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-mix` goal model | Completed | Verified | Five energy shapes, three creativity settings; the seam ADR-0006 draws |
+| `prv-mix` candidate projection | Completed | Verified | Missing facts represented, never defaulted |
+| `prv-mix` constraint model | Completed | Verified | A violating move is not generated, at any creativity setting |
+| `prv-mix` objective and evidence | Completed | Verified | Six weighted components, each retained with the decision |
+| `prv-mix` beam search | Completed | Verified | Deterministic; follows the energy shape; no track repeats |
+| `prv-mix` distinct alternatives | Completed | Verified | Version A/B/C differ by construction, not by sampling |
 
 ## Not started
 
