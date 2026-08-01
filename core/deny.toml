@@ -1,0 +1,45 @@
+# Dependency policy for the portable core.
+#
+# Master Prompt #26 requires third-party dependencies to be tracked for known
+# vulnerabilities and licence compatibility. Master Prompt #31 requires every
+# dependency to carry a reason, an owner, a risk and a replacement strategy;
+# those live in docs/mts/04-dependencies.md, and this file is the automated half.
+#
+# The core currently has no runtime dependencies at all. That is deliberate: the
+# realtime path must be auditable in full, and every crate added to it is a crate
+# whose allocation behaviour becomes our problem. Additions require an entry in
+# the dependency map and a review.
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[licences]
+version = 2
+# Permissive licences only. A copyleft dependency in a commercially distributed
+# application is a legal question, not an engineering one, and is resolved before
+# the dependency is added rather than after.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Nothing in the core may pull in a runtime that spawns threads or performs I/O
+# behind our back; that would defeat the purity guarantee of ADR-0001.
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

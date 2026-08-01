@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [
+    "prv-time",
+    "prv-rt",
+    "prv-harmony",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "UNLICENSED"
+authors = ["PRV AI DJ Studio Engineering"]
+repository = "https://github.com/adiparvu/prvdj"
+
+# Lint policy for the portable core.
+#
+# The core is the layer that must still be correct in ten years and on stage in
+# front of an audience (MP#11 P4, MP#15). These lints are the mechanical part of
+# that promise; the rest is review.
+[workspace.lints.rust]
+# Unsafe code is denied by default and allowed only per-crate, with a written
+# justification at the top of the crate. Making it an explicit exception rather
+# than an ambient permission is what keeps the audited surface small enough to
+# actually audit.
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+# Correctness and reliability first (MP#15 value order).
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Constructs that can panic are forbidden outright. Any function reachable from
+# the realtime entry point must not panic (ADR-0002), and the simplest way to
+# guarantee that across a growing team is to forbid the constructs everywhere in
+# the core and require an explicit, reviewed allow at the few sites where a
+# panic is genuinely impossible and the alternative is less clear.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+integer_division = "deny"
+float_cmp = "deny"
+
+# Arithmetic that silently wraps in release builds is a correctness hazard in a
+# system whose sample positions must be exact.
+cast_possible_truncation = "deny"
+cast_precision_loss = "warn"
+cast_sign_loss = "deny"
+
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"

@@ -1,0 +1,154 @@
+name: CI
+
+# Quality gates required by Master Prompt #28.
+#
+# Every pull request must pass build validation, static analysis, formatting,
+# unit and integration tests, architecture-rule validation, dependency review
+# and documentation validation. A build that fails a gate is rejected; gates are
+# not advisory.
+#
+# The realtime allocation test in `core/prv-rt/tests/realtime_contract.rs` is
+# the most important gate here. It is what turns the audio-thread contract of
+# ADR-0002 from an intention into a property of the build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  core:
+    name: Portable core (Linux)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # Formatting is checked before anything else: a formatting failure is
+      # cheap to detect and makes every later diff harder to read.
+      - name: Format check
+        run: cargo fmt --all --check
+
+      # Static analysis with warnings denied. The lint policy in the workspace
+      # manifest forbids the panic-capable constructs on which the realtime
+      # contract depends.
+      - name: Static analysis
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all-targets --all-features
+
+      - name: Unit and integration tests
+        run: cargo test --all-features
+
+      # Release-mode run of the realtime contract. Debug builds have different
+      # allocation behaviour from optimised ones, so the gate must hold in the
+      # configuration that ships.
+      - name: Realtime contract (release)
+        run: cargo test --release --package prv-rt --test realtime_contract
+
+      # Documentation must build without warnings: Master Prompt #28 forbids
+      # merging undocumented public interfaces.
+      - name: Documentation
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  architecture:
+    name: Architecture rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate layering and documentation invariants
+        run: ./tools/check-architecture.sh
+
+  design-tokens:
+    name: Design tokens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Generator tests
+        run: cargo test --manifest-path tools/tokengen/Cargo.toml
+
+      # Master Prompt #16: the token source is the single source of truth.
+      # A hand edit to a generated binding, or a token change committed without
+      # regenerating, fails here rather than diverging quietly.
+      - name: Generated bindings are current
+        run: cargo run --manifest-path tools/tokengen/Cargo.toml -- --check
+
+      - name: Install Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+
+      # The generated bindings carry no framework imports precisely so that this
+      # step can run on a Linux runner. A token change is therefore verified
+      # without needing scarce macOS capacity.
+      - name: Generated bindings compile
+        run: swiftc -parse apple/PRVUI/Tokens/Generated/DesignTokens.swift
+
+  dependencies:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      # Master Prompt #26 requires third-party dependencies to be tracked for
+      # known vulnerabilities and licence compatibility, and Master Prompt #31
+      # requires every dependency to carry a replacement strategy.
+      - name: Advisories, licences and sources
+        run: cargo deny check
+
+  apple:
+    name: Apple platforms (macOS)
+    # Requires a macOS runner with Xcode. Until one is available this job does
+    # not execute, and every Apple-framework module is reported as *authored*
+    # rather than *verified* in the implementation status board. Reporting it
+    # otherwise would violate Master Prompt #13 and #27.
+    runs-on: macos-14
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Build Swift packages
+        run: swift build --package-path apple
+      - name: Test Swift packages
+        run: swift test --package-path apple

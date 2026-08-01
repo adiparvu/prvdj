@@ -1,0 +1,17 @@
+[package]
+name = "prv-rt"
+description = "Realtime-safe primitives for the audio thread: wait-free queues, snapshot publication, parameter smoothing and preallocated buffers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+prv-time = { path = "../prv-time" }
+
+[lints]
+workspace = true

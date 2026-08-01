@@ -1,0 +1,27 @@
+# Rust — build output anywhere in the tree
+target/
+**/*.rs.bk
+
+# Swift / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Generated design-token bindings ARE committed, deliberately.
+#
+# An Xcode build must not require a Rust toolchain to produce the tokens it
+# compiles against, so the generated Swift is checked in. Drift is prevented by
+# the `tokengen --check` gate in continuous integration, which fails the build if
+# the committed file differs from a fresh generation. The file itself is never
+# edited by hand.
+
+build/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/

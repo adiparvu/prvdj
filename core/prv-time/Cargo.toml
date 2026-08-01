@@ -1,0 +1,17 @@
+[package]
+name = "prv-time"
+description = "Musical time, tempo and the authoritative transport clock."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true
