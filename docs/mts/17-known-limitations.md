@@ -28,12 +28,21 @@ Phase 3.
 The ordering is meaningful and is tested; the absolute values are not yet
 trustworthy and are documented as such at the point of use.
 
-## 3. The tempo map has a single segment
+## 3. Processors have no parameter-addressing scheme
 
-The transport clock keeps one tempo anchor. Master Prompt #3A requires multiple
-tempo regions and live tempo changes. Extending it means storing a list of
-anchors and binary-searching them; the arithmetic does not change, and no caller
-is affected. Scheduled for Phase 1 alongside the beat grid.
+Each processor exposes typed setters — `set_gains`, `set_position` — which is
+clear to call and cannot express automation, a MIDI mapping or a plugin
+parameter, all of which need to address a parameter by identity rather than by
+name at the call site. Master Prompt #21 requires automation of ten parameter
+kinds and Master Prompt #23 requires plugins to declare theirs.
+
+A parameter descriptor scheme — identity, range, unit, default, automatable — is
+the correct answer and is scheduled for Phase 2 with the automation lane. It is
+recorded here rather than improvised now, because a parameter model designed
+around one processor's needs would have to be redone when the second arrived.
+
+*Resolved in Sprint 1: the tempo map now supports multiple segments, so a beat
+grid can follow a recording that drifts.*
 
 ## 4. Separation model not selected
 

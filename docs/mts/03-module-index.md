@@ -11,7 +11,7 @@ I infrastructure, P presentation.
 | `mixer` | Decks, channels, EQ, filter, crossfader, metering | D | `core/prv-dsp` | MP#3A, MP#22 |
 | `effects` | Effect chain, parameters, automation targets | D | `core/prv-dsp` | MP#3A, MP#3C |
 | `master-bus` | Master chain, limiter, true peak, LUFS | D | `core/prv-dsp` | MP#3A, MP#3C |
-| `playback-transport` | Playback states, transport operations, decks | A | `core/prv-transport` | MS#002 |
+| `playback-transport` | Playback states, transport operations, loops, slip | A | `core/prv-transport` | MS#002 |
 | `audio-analysis` | Tempo, key, structure, energy, loudness, spectrum | D | `core/prv-analysis` | MP#20, MP#3A |
 | `waveform` | Tile generation, resolutions, cache, viewport maths | D | `core/prv-waveform` | MS#003 |
 | `music-library` | Import, metadata, playlists, collections, search, duplicates | D+A | `core/prv-library` | MS#001 |

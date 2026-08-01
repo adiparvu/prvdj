@@ -10,7 +10,7 @@ points, not with features built early.
 | Phase | Goal | Exit criterion | Status |
 |-------|------|----------------|--------|
 | 0 | Foundation | Project builds; pipeline operational; architecture reviewed | **Complete** |
-| 1 | Core Experience | A user can import music and create a simple mix | Next |
+| 1 | Core Experience | A user can import music and create a simple mix | **In progress** |
 | 2 | Professional Workflow | Professional editing workflow is stable | Not started |
 | 3 | AI Foundation | Recommendations are transparent, explainable and optional | Not started |
 | 4 | Live Performance | Reliable live workflow | Not started |
@@ -24,12 +24,12 @@ points, not with features built early.
 Ordered so that each item is verifiable when it lands, and so that nothing
 depends on a module that does not yet exist.
 
-1. **Transport state machine.** The nine states of Module Specification #002 with
-   explicit transitions and no hidden ones.
-2. **DSP graph and the first processors.** Gain, then the three-band equaliser
-   and filter, each bound by the ADR-0002 contract and covered by the allocation
-   gate.
-3. **Beat grid and multi-segment tempo map.** Removes limitation 3.
+1. ~~**Transport state machine.**~~ Done — nine states, 405 transitions defined,
+   loops with phase-correct wrapping, slip mode.
+2. ~~**DSP graph and the first processors.**~~ Done — processor contract, chain,
+   gain, Linkwitz-Riley three-band equaliser with true kill, filter sweep. All
+   under the allocation gate.
+3. ~~**Beat grid and multi-segment tempo map.**~~ Done.
 4. **Waveform tile generation.** Tile model, resolutions, cache invalidation by
    generation version (Module Specification #003).
 5. **Library index and import pipeline.** Restartable stages with durable state,

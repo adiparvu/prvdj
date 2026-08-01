@@ -145,6 +145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-dsp"
+version = "0.1.0"
+dependencies = [
+ "prv-rt",
+ "prv-time",
+ "prv-transport",
+]
+
+[[package]]
 name = "prv-harmony"
 version = "0.1.0"
 
@@ -160,6 +169,14 @@ name = "prv-time"
 version = "0.1.0"
 dependencies = [
  "proptest",
+]
+
+[[package]]
+name = "prv-transport"
+version = "0.1.0"
+dependencies = [
+ "prv-rt",
+ "prv-time",
 ]
 
 [[package]]

@@ -1,0 +1,18 @@
+[package]
+name = "prv-transport"
+description = "Playback state, loop regions and the transport that drives the authoritative clock."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-time = { path = "../prv-time" }
+
+[dev-dependencies]
+prv-rt = { path = "../prv-rt" }
+
+[lints]
+workspace = true

@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 0._
+_Last updated: Sprint 1._
 
 ## Sprint 0 — Foundation
 
@@ -30,6 +30,21 @@ _Last updated: Sprint 0._
 | `prv-harmony` harmonic model | Completed | Verified | Camelot wheel, compatibility scoring, property tested |
 | Design token source & generator | Completed | Verified | Generates Swift and JSON from one source |
 | Continuous integration pipeline | Completed | — | Linux jobs run; macOS jobs declared, not yet exercised |
+
+## Sprint 1 — Core Experience, first slice
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-time` multi-segment tempo map | Completed | Verified | Removes the single-segment limitation |
+| `prv-time` beat grid and snapping | Completed | Verified | Beat, bar, phrase, division and sample resolutions |
+| `prv-transport` playback state machine | Completed | Verified | All 405 state-event-intent combinations defined |
+| `prv-transport` loops and slip | Completed | Verified | Phase-correct wrapping, including loops shorter than a block |
+| `prv-dsp` processor contract and chain | Completed | Verified | Bounded length, bypass, latency reporting |
+| `prv-dsp` gain | Completed | Verified | Ramped, one ramp shared across channels |
+| `prv-dsp` three-band equaliser | Completed | Verified | Linkwitz-Riley crossover, true kill, flat at unity |
+| `prv-dsp` filter | Completed | Verified | Exponential sweep, stable under fast modulation |
+| Allocation gate extended to the signal path | Completed | Verified | A full channel strip under control movement |
+| Requirements traceability matrix | Completed | — | Every requirement linked to its code and test |
 
 ## Not started
 

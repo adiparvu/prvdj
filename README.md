@@ -51,6 +51,8 @@ core/          Portable core in Rust — domain and application layers.
   prv-rt/        Realtime primitives: wait-free queues, snapshot publication,
                  parameter smoothing, preallocated buffers
   prv-harmony/   Keys, the Camelot wheel, harmonic compatibility
+  prv-transport/ Playback state, loops, slip, and the transport that drives the clock
+  prv-dsp/       The signal path: processors, the chain, gain, EQ, filter
 
 apple/         Swift application and presentation layers
 design/tokens/ The single source of truth for every visual value
@@ -68,7 +70,7 @@ The portable core needs only a Rust toolchain.
 
 ```sh
 cd core
-cargo test              # 107 tests
+cargo test              # 223 tests
 cargo clippy --all-targets -- -D warnings
 ```
 

@@ -4,6 +4,8 @@ members = [
     "prv-time",
     "prv-rt",
     "prv-harmony",
+    "prv-transport",
+    "prv-dsp",
 ]
 
 [workspace.package]

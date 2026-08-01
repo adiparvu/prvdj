@@ -1,0 +1,19 @@
+[package]
+name = "prv-dsp"
+description = "The realtime signal path: processors, the chain that runs them, and the first production processors."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-rt = { path = "../prv-rt" }
+prv-time = { path = "../prv-time" }
+
+[dev-dependencies]
+prv-transport = { path = "../prv-transport" }
+
+[lints]
+workspace = true

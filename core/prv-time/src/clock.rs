@@ -1,37 +1,9 @@
+use crate::conversion::{frames_from_ticks, ticks_from_frames};
 use crate::frames::Frames;
-use crate::musical_time::{MusicalTime, Ticks, TICKS_PER_BEAT};
+use crate::musical_time::{MusicalTime, Ticks};
 use crate::sample_rate::SampleRate;
 use crate::signature::TimeSignature;
 use crate::tempo::Tempo;
-
-/// Microseconds in a second, used in the frame/tick conversions.
-const MICROS_PER_SECOND: i128 = 1_000_000;
-
-/// Divides two integers, rounding to the nearest value and away from zero on a
-/// tie.
-///
-/// Used for both directions of the frame/tick conversion. Rounding to nearest
-/// rather than truncating halves the worst-case error and, more importantly,
-/// makes the conversion symmetric: a tick position converted to frames and back
-/// returns the original tick whenever one tick spans at least one frame.
-///
-/// `denominator` is always positive at every call site in this module.
-const fn div_round_nearest(numerator: i128, denominator: i128) -> i128 {
-    // Guard kept for total-function discipline even though no call site can
-    // pass zero: the sample rate and tempo are both validated non-zero.
-    if denominator == 0 {
-        return 0;
-    }
-    #[allow(
-        clippy::integer_division,
-        reason = "rounding is applied explicitly by the bias term"
-    )]
-    if numerator >= 0 {
-        (numerator + denominator / 2) / denominator
-    } else {
-        (numerator - denominator / 2) / denominator
-    }
-}
 
 /// An immutable view of transport state at one instant.
 ///
@@ -82,9 +54,13 @@ pub struct TransportSnapshot {
 /// than reinterpreting the whole timeline, so the bar the user is currently
 /// hearing does not jump underneath them.
 ///
-/// This is a single-segment tempo map. Extending it to the multiple tempo
-/// regions required by Master Prompt #3A means storing a list of anchors and
-/// binary-searching it; the arithmetic below does not change.
+/// The clock holds exactly one tempo segment, deliberately. The multiple tempo
+/// regions required by Master Prompt #3A live in [`TempoMap`](crate::TempoMap),
+/// which is a non-realtime structure: it allocates, and it is used for timeline
+/// arithmetic off the audio thread. The audio thread receives segment changes as
+/// scheduled commands and applies them here, one at a time. Keeping the map out
+/// of the clock is what allows the clock to stay `Copy` and allocation-free, as
+/// ADR-0002 requires.
 ///
 /// # Realtime safety
 ///
@@ -209,11 +185,12 @@ impl TransportClock {
     /// it, instead of jumping.
     pub fn set_sample_rate(&mut self, sample_rate: SampleRate) {
         let ticks = self.ticks();
+        // The frame position that corresponds to the same musical instant at the
+        // new rate, measured from the origin, then re-anchored there.
+        let position = Frames::new(frames_from_ticks(ticks.get(), sample_rate, self.tempo));
         self.sample_rate = sample_rate;
-        self.anchor_frames = Frames::ZERO;
-        self.anchor_ticks = Ticks::ZERO;
-        self.position = self.ticks_to_frames(ticks);
-        self.anchor_frames = self.position;
+        self.position = position;
+        self.anchor_frames = position;
         self.anchor_ticks = ticks;
     }
 
@@ -223,16 +200,9 @@ impl TransportClock {
     /// bit-identical on every platform.
     #[must_use]
     pub fn frames_to_ticks(self, position: Frames) -> Ticks {
-        let elapsed = i128::from(position.get() - self.anchor_frames.get());
-        let numerator = elapsed
-            .saturating_mul(MICROS_PER_SECOND)
-            .saturating_mul(i128::from(TICKS_PER_BEAT));
-        let denominator = i128::from(self.sample_rate.hz_u64())
-            .saturating_mul(i128::from(self.tempo.micros_per_beat()));
-        let ticks = div_round_nearest(numerator, denominator);
-        Ticks::new(saturate_to_i64(
-            ticks.saturating_add(i128::from(self.anchor_ticks.get())),
-        ))
+        let elapsed = position.get().saturating_sub(self.anchor_frames.get());
+        let ticks = ticks_from_frames(elapsed, self.sample_rate, self.tempo);
+        Ticks::new(ticks.saturating_add(self.anchor_ticks.get()))
     }
 
     /// Converts an absolute tick position to an absolute frame position.
@@ -252,15 +222,9 @@ impl TransportClock {
     /// frame.
     #[must_use]
     pub fn ticks_to_frames(self, ticks: Ticks) -> Frames {
-        let elapsed = i128::from(ticks.get() - self.anchor_ticks.get());
-        let numerator = elapsed
-            .saturating_mul(i128::from(self.sample_rate.hz_u64()))
-            .saturating_mul(i128::from(self.tempo.micros_per_beat()));
-        let denominator = MICROS_PER_SECOND.saturating_mul(i128::from(TICKS_PER_BEAT));
-        let frames = div_round_nearest(numerator, denominator);
-        Frames::new(saturate_to_i64(
-            frames.saturating_add(i128::from(self.anchor_frames.get())),
-        ))
+        let elapsed = ticks.get().saturating_sub(self.anchor_ticks.get());
+        let frames = frames_from_ticks(elapsed, self.sample_rate, self.tempo);
+        Frames::new(frames.saturating_add(self.anchor_frames.get()))
     }
 
     /// Returns an immutable snapshot for publication to other subsystems.
@@ -274,27 +238,6 @@ impl TransportClock {
             tempo: self.tempo,
             signature: self.signature,
             sample_rate: self.sample_rate,
-        }
-    }
-}
-
-/// Clamps a 128-bit intermediate into the 64-bit domain type.
-///
-/// Reaching either bound requires a position beyond any physically possible
-/// session, but clamping explicitly is preferred to a silent wrap, which would
-/// place the playhead somewhere arbitrary.
-const fn saturate_to_i64(value: i128) -> i64 {
-    if value > i64::MAX as i128 {
-        i64::MAX
-    } else if value < i64::MIN as i128 {
-        i64::MIN
-    } else {
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "both bounds checked immediately above; this branch is in range by construction"
-        )]
-        {
-            value as i64
         }
     }
 }
@@ -457,15 +400,5 @@ mod tests {
         let mut clock = clock_at(120.0);
         clock.seek(Frames::new(-24_000));
         assert_eq!(clock.musical_position(), MusicalTime::new(-1, 3, 0));
-    }
-
-    #[test]
-    fn rounding_helper_is_symmetric_about_zero() {
-        assert_eq!(div_round_nearest(10, 4), 3);
-        assert_eq!(div_round_nearest(-10, 4), -3);
-        assert_eq!(div_round_nearest(2, 4), 1);
-        assert_eq!(div_round_nearest(-2, 4), -1);
-        assert_eq!(div_round_nearest(0, 4), 0);
-        assert_eq!(div_round_nearest(1, 0), 0);
     }
 }

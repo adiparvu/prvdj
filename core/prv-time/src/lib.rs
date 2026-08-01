@@ -60,14 +60,18 @@
 //! assert_eq!(clock.position(), Frames::new(22_500));
 //! ```
 
+mod beat_grid;
 mod clock;
+mod conversion;
 mod error;
 mod frames;
 mod musical_time;
 mod sample_rate;
 mod signature;
 mod tempo;
+mod tempo_map;
 
+pub use beat_grid::{BeatGrid, SnapResolution, DEFAULT_PHRASE_BARS};
 pub use clock::{TransportClock, TransportSnapshot};
 pub use error::TimeError;
 pub use frames::Frames;
@@ -75,3 +79,4 @@ pub use musical_time::{MusicalTime, Ticks, TICKS_PER_BEAT};
 pub use sample_rate::SampleRate;
 pub use signature::TimeSignature;
 pub use tempo::Tempo;
+pub use tempo_map::{TempoMap, TempoSegment};

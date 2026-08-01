@@ -41,6 +41,7 @@ updated in the same change that caused the disagreement.
 | Module template | [module-template.md](module-template.md) | The 16-section structure every module document must use |
 | Implementation status | [implementation-status.md](implementation-status.md) | What is verified, authored, in design, not started |
 | Risk register | [risk-register.md](risk-register.md) | Living register with probability, impact, mitigation, owner, review date |
+| Traceability matrix | [traceability.md](traceability.md) | Every requirement linked to its decision, its code and the test that verifies it (MP#28) |
 
 ## Maintenance rule
 
