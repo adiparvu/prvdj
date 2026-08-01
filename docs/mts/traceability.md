@@ -88,7 +88,13 @@ did not have would be worse than no row at all.
 
 | Requirement | Source | Where | Verification | Status |
 |---|---|---|---|---|
-| Non-destructive editing, version history | MP#3C, MP#7, MP#9 | ADR-0003 | — | **Decided** |
+| Non-destructive editing, version history | MP#3C, MP#7, MP#9 | `prv-project::OperationLog` | `undo_appends_an_inverse_rather_than_shortening_the_log`, `materialising_a_position_gives_the_project_as_it_was` | **Verified** |
+| Restore, compare, duplicate, branch, merge | MP#9 | `prv-project` | `branching_forks_history_without_recording_the_fork`, `a_branch_can_be_merged_back` | **Verified** |
+| Undo, redo, named versions | MP#3C, MP#21 | `prv-project` | `undo_can_itself_be_undone`, `named_versions_are_positions` | **Verified** |
+| Incremental synchronisation | MP#24 | `prv-project::operations_since` | `synchronisation_sends_only_what_the_other_side_lacks` | **Verified** |
+| Conflicts explained, never silently discarded | MP#24 | `prv-project::MergeReport` | `concurrent_edits_to_the_same_thing_are_reported`, `a_sequential_edit_is_not_a_conflict` | **Verified** |
+| Offline devices converge | MP#24 | `prv-project` | `two_devices_converge_on_the_same_state`, `convergence_holds_whatever_order_operations_arrive_in` | **Verified** |
+| The project refers to media, never contains it | MP#29, ADR-0003 | `prv-project::TrackRef` | structural — a placement holds a reference | **Verified** |
 | Offline-first | MP#1, MP#24 | ADR-0001, ADR-0006 | the core has no network dependency, enforced by rule 1 | **Enforced** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |

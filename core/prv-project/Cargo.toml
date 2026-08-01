@@ -1,0 +1,17 @@
+[package]
+name = "prv-project"
+description = "The project as an append-only log of operations: undo, versions, branching and merge from one mechanism."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-time = { path = "../prv-time" }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

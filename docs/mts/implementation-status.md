@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 2._
+_Last updated: Sprint 3._
 
 ## Sprint 0 — Foundation
 
@@ -53,6 +53,15 @@ _Last updated: Sprint 2._
 | `prv-waveform` tile model | Completed | Verified | Min, max and energy; clipping detected; damaged frames skipped |
 | `prv-waveform` resolution ladder and builder | Completed | Verified | Five bands, each built from the audio; chunk-size independent |
 | `prv-waveform` viewport rendering | Completed | Verified | Allocation-free into a caller buffer; never upscales |
+
+## Sprint 3 — Project operation log
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-project` operation envelope and version vectors | Completed | Verified | Concurrency detected as a fact, not estimated |
+| `prv-project` materialisation and undo | Completed | Verified | Undo appends an inverse; the log never shrinks |
+| `prv-project` named versions and branching | Completed | Verified | Both are positions in the log |
+| `prv-project` incremental sync and merge | Completed | Verified | Convergence proven independent of arrival order |
 
 ## Not started
 

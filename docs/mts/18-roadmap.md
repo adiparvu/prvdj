@@ -35,8 +35,10 @@ depends on a module that does not yet exist.
    viewport rendering.
 5. **Library index and import pipeline.** Restartable stages with durable state,
    as Master Prompt #7 requires.
-6. **Project operation log.** The mechanism from ADR-0003 on which undo,
-   branching and synchronisation all rest.
+6. ~~**Project operation log.**~~ Done — operations with version vectors,
+   deterministic total order, materialisation, named versions, branching, undo
+   by compensating operation, and merge that separates commuting edits from
+   genuine conflicts.
 7. **Apple audio host.** CoreAudio render host and decoder adapters. Requires a
    macOS runner to be verifiable; until then it is authored, not verified.
 8. **First interface surfaces.** Token adapter, foundation components, Library
