@@ -15,8 +15,9 @@ Governed by Master Prompt #27. Quality is not a phase.
 | `prv-harmony` | 30 | All 24 published Camelot positions reproduced against an external chart; safety ordering; no key is ever stranded without a safe destination |
 | `prv-waveform` | 38 | Tiles report true extremes; chunk size does not change the result; aggregation preserves transients; level selection never upscales |
 | `prv-project` | 49 | Two devices converge whatever order operations arrive in; concurrent edits to the same thing are reported and to different things are not; undo restores state exactly and can itself be undone |
+| `prv-library` | 46 | Typing more narrows rather than widens; a renamed track stops matching its old name; removal keeps ratings, tags and collections; duplicates are reported once, strongest signal first |
 | `tokengen` | 4 | Token generation and schema validation |
-| **Total** | **314** | all passing, all gated on every pull request |
+| **Total** | **360** | all passing, all gated on every pull request |
 
 ## Practices that matter more than the count
 

@@ -33,8 +33,9 @@ depends on a module that does not yet exist.
 4. ~~**Waveform tile generation.**~~ Done — tile model, five-band resolution
    ladder, resumable generation, versioned invalidation, allocation-free
    viewport rendering.
-5. **Library index and import pipeline.** Restartable stages with durable state,
-   as Master Prompt #7 requires.
+5. ~~**Library index.**~~ Done — track entity, soft delete with restore, prefix
+   search, composable filters, sorting, duplicate detection, collections. The
+   *import pipeline* that feeds it is platform work and follows the audio host.
 6. ~~**Project operation log.**~~ Done — operations with version vectors,
    deterministic total order, materialisation, named versions, branching, undo
    by compensating operation, and merge that separates commuting edits from

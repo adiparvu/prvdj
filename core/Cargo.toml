@@ -8,6 +8,7 @@ members = [
     "prv-dsp",
     "prv-waveform",
     "prv-project",
+    "prv-library",
 ]
 
 [workspace.package]

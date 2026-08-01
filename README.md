@@ -55,6 +55,7 @@ core/          Portable core in Rust — domain and application layers.
   prv-dsp/       The signal path: processors, the chain, gain, EQ, filter
   prv-waveform/  Waveform tiles, resolution ladder, viewport rendering
   prv-project/   The project as an append-only operation log
+  prv-library/   Track identity, search, filtering, duplicate detection
 
 apple/         Swift application and presentation layers
 design/tokens/ The single source of truth for every visual value
@@ -72,7 +73,7 @@ The portable core needs only a Rust toolchain.
 
 ```sh
 cd core
-cargo test              # 310 tests
+cargo test              # 356 tests
 cargo clippy --all-targets -- -D warnings
 ```
 

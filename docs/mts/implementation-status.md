@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 3._
+_Last updated: Sprint 4._
 
 ## Sprint 0 — Foundation
 
@@ -62,6 +62,16 @@ _Last updated: Sprint 3._
 | `prv-project` materialisation and undo | Completed | Verified | Undo appends an inverse; the log never shrinks |
 | `prv-project` named versions and branching | Completed | Verified | Both are positions in the log |
 | `prv-project` incremental sync and merge | Completed | Verified | Convergence proven independent of arrival order |
+
+## Sprint 4 — Music library
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-library` track entity and states | Completed | Verified | Missing files keep their ratings, tags and playlists |
+| `prv-library` prefix search index | Completed | Verified | Cost proportional to the answer, not the library |
+| `prv-library` composable filters and sorting | Completed | Verified | Harmonic filtering uses the planner's own model |
+| `prv-library` duplicate detection | Completed | Verified | Four signals, ordered by confidence, never acted on |
+| `prv-library` collections | Completed | Verified | Overlapping, and they survive removal |
 
 ## Not started
 

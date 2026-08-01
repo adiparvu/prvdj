@@ -158,6 +158,14 @@ name = "prv-harmony"
 version = "0.1.0"
 
 [[package]]
+name = "prv-library"
+version = "0.1.0"
+dependencies = [
+ "prv-harmony",
+ "prv-time",
+]
+
+[[package]]
 name = "prv-project"
 version = "0.1.0"
 dependencies = [

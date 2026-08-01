@@ -109,7 +109,15 @@ did not have would be worse than no row at all.
 | The renderer never processes invisible regions | MS#003 | `prv-waveform::render` | `rendering_writes_exactly_the_requested_columns` | **Verified** |
 | Rendering allocates nothing per frame | MP#4, MS#003 | `prv-waveform::render` | caller-supplied buffer; no allocation in the call | **Verified** |
 | Clipping detected and located | MP#20 | `prv-waveform::Tile::is_clipped` | `clipping_is_detected_at_full_scale` | **Verified** |
-| Library, timeline, cloud, UI | MS#001, MP#21, MP#24, MP#17 | — | — | Not started |
+| Library stores, indexes, organises and nothing else | MS#001 | `prv-library` | non-responsibilities enforced by the crate's dependencies | **Verified** |
+| Search feels instant at library scale | MS#001 | `prv-library` prefix index | `search_stays_fast_on_a_large_library` | **Verified** |
+| Search updates as the user types | MS#001 | `prv-library::TextIndex` | `typing_more_narrows_rather_than_widens` | **Verified** |
+| Composable filters, ten sort keys | MS#001 | `prv-library::Query` | `filters_compose_by_conjunction`, `a_limit_truncates_after_sorting_not_before` | **Verified** |
+| Duplicates suggested, never deleted | MS#001 | `prv-library::find_duplicates` | `an_edit_and_an_extended_mix_are_reported_but_distinguished`, `the_same_pair_is_never_reported_twice` | **Verified** |
+| Missing and moved files lose no organisation | MS#001 | `prv-library::TrackStatus` | `removing_hides_a_track_without_losing_what_the_user_built`, `a_missing_track_still_appears_so_the_user_can_find_it` | **Verified** |
+| Overlapping collections | MS#001 | `prv-library` | `collections_overlap_freely` | **Verified** |
+| Nothing permanently deleted by default | MP#9 | `prv-library::remove` | `a_removed_track_can_be_restored_with_everything_intact` | **Verified** |
+| Timeline, cloud, UI | MP#21, MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself
 
