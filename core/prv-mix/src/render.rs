@@ -385,7 +385,9 @@ pub fn render(
 
     let mut operations = Vec::new();
     let mut transitions = Vec::new();
-    let mut position = Frames::ZERO;
+    let mut previous_end = Frames::ZERO;
+    let mut previous_start = Frames::ZERO;
+    let mut previous_candidate: Option<&Candidate> = None;
     let mut end_of_set = Frames::ZERO;
 
     for (index, planned) in plan.tracks().iter().enumerate() {
@@ -397,11 +399,13 @@ pub fn render(
 
         let lane = u32::try_from(index % (LANES as usize)).unwrap_or(0);
         let placement = ids.take();
-
-        // The overlap with the *previous* track pulls this one earlier. The
-        // first track has no previous, so it starts at zero.
         let overlap = overlap_for(planned, candidate, sample_rate);
-        let start = Frames::new(position.get().saturating_sub(overlap.get()).max(0));
+
+        // Where this track begins. The first starts at zero; every other one
+        // begins where the *outgoing* track invites it to.
+        let start = previous_candidate.map_or(Frames::ZERO, |outgoing| {
+            transition_start(previous_start, previous_end, outgoing, overlap)
+        });
 
         operations.push(OperationPayload::PlaceTrack {
             placement,
@@ -411,26 +415,43 @@ pub fn render(
             lane,
         });
 
-        let previous = index
+        let earlier = index
             .checked_sub(1)
-            .and_then(|earlier| plan.tracks().get(earlier));
-        if let (Some(score), Some(previous)) = (planned.transition(), previous) {
+            .and_then(|position| plan.tracks().get(position));
+        if let (Some(score), Some(earlier)) = (planned.transition(), earlier) {
             let choice = choose_technique(score.components());
             let transition = RenderedTransition {
-                from: previous.id(),
+                from: earlier.id(),
                 to: planned.id(),
                 choice,
                 at: start,
                 length: overlap,
             };
-            let previous_lane =
+            let earlier_lane =
                 u32::try_from(index.saturating_sub(1) % (LANES as usize)).unwrap_or(0);
-            operations.extend(automation_for(&transition, lane, previous_lane));
+            operations.extend(automation_for(&transition, lane, earlier_lane));
+
+            // The set takes the incoming track's tempo once the transition is
+            // over. During the overlap the two are matched and it is the
+            // outgoing record that is still setting the pulse, so the change
+            // belongs at the end rather than at the start.
+            operations.push(OperationPayload::SetTempo {
+                position: transition.end(),
+                tempo: candidate.tempo(),
+            });
             transitions.push(transition);
+        } else {
+            // The set opens at its first track's tempo.
+            operations.push(OperationPayload::SetTempo {
+                position: Frames::ZERO,
+                tempo: candidate.tempo(),
+            });
         }
 
-        position = Frames::new(start.get().saturating_add(candidate.duration().get()));
-        end_of_set = end_of_set.max(position);
+        previous_start = start;
+        previous_end = Frames::new(start.get().saturating_add(candidate.duration().get()));
+        previous_candidate = Some(candidate);
+        end_of_set = end_of_set.max(previous_end);
     }
 
     Ok(RenderedMix {
@@ -438,6 +459,40 @@ pub fn render(
         transitions,
         duration: end_of_set,
     })
+}
+
+/// Where the incoming track begins, given where the outgoing one invites it.
+///
+/// # Transitions land where the music offers them
+///
+/// The naive placement — overlap the last few bars of whatever is playing —
+/// mixes into the outgoing track's *ending*, which on a produced record is
+/// often a fade, a drum outro, or nothing at all. The analysis has already found
+/// where the record actually wants to be left: a quiet outro, or a breakdown.
+///
+/// So the transition begins at the outgoing track's best exit point when it has
+/// one, and falls back to the naive placement when it does not. The fallback is
+/// not a compromise — a track with no identified exit genuinely offers no better
+/// answer than "near the end" — but it is the difference between a transition
+/// that lands and one that merely happens on time.
+fn transition_start(
+    outgoing_start: Frames,
+    outgoing_end: Frames,
+    outgoing: &Candidate,
+    overlap: Frames,
+) -> Frames {
+    let fallback = outgoing_end.get().saturating_sub(overlap.get());
+
+    let chosen = outgoing.best_exit().map_or(fallback, |exit| {
+        outgoing_start.get().saturating_add(exit.position().get())
+    });
+
+    // Never before the outgoing track began, and never so late that the overlap
+    // would run past its end. An exit point from a stale analysis, or one on a
+    // track that has since been trimmed, must not push the incoming record into
+    // silence.
+    let latest = outgoing_end.get().saturating_sub(overlap.get());
+    Frames::new(chosen.clamp(outgoing_start.get(), latest.max(outgoing_start.get())))
 }
 
 /// How long the overlap into a track should be.
@@ -1108,6 +1163,139 @@ mod tests {
         let fraction = overlap_fraction(transition, Frames::new(TRACK_FRAMES));
         assert!((0.0..=1.0).contains(&fraction));
         assert_eq!(overlap_fraction(transition, Frames::ZERO), 0.0);
+    }
+
+    #[test]
+    fn a_transition_lands_on_the_outgoing_tracks_exit_point() {
+        // The naive placement mixes into whatever the outgoing record happens
+        // to be doing at the end. The analysis has already found where it wants
+        // to be left, and this is what uses it.
+        use crate::candidate::{MixPoint, MixPointRole};
+
+        let exit_at = Frames::new(TRACK_FRAMES >> 1);
+        let with_exit =
+            track(0, PitchClass::A).with_point(MixPoint::new(exit_at, 0.1, MixPointRole::Exit));
+        let candidates = vec![with_exit, track(1, PitchClass::E)];
+
+        let goal = Goal::new(Frames::new(TRACK_FRAMES * 2), EnergyShape::Plateau);
+        let plan = crate::plan::plan(&candidates, &goal, 1)
+            .expect("plans")
+            .into_iter()
+            .next()
+            .expect("one plan");
+
+        // The planner may open with either track; only the case where the one
+        // with the exit point goes first tells us anything.
+        if plan.tracks().first().map(PlannedTrack::id) != Some(TrackId::new(0)) {
+            return;
+        }
+
+        let mut ids = PlacementIds::starting_at(1);
+        let mix = render(&plan, &candidates, RATE, &mut ids).expect("renders");
+        let Some(transition) = mix.transitions().first() else {
+            return;
+        };
+        assert_eq!(
+            transition.at(),
+            exit_at,
+            "the transition did not begin at the outgoing track's exit point"
+        );
+    }
+
+    #[test]
+    fn an_exit_point_too_late_to_use_is_clamped_rather_than_trusted() {
+        // An exit point from a stale analysis, or from a track that has since
+        // been trimmed, must not push the incoming record into silence.
+        use crate::candidate::{MixPoint, MixPointRole};
+
+        let candidate = track(0, PitchClass::A);
+        let overlap = Frames::new(TRACK_FRAMES >> 2);
+        let start = transition_start(
+            Frames::ZERO,
+            Frames::new(TRACK_FRAMES),
+            &candidate.clone().with_point(MixPoint::new(
+                Frames::new(TRACK_FRAMES * 2),
+                0.1,
+                MixPointRole::Exit,
+            )),
+            overlap,
+        );
+        assert_eq!(
+            start,
+            Frames::new(TRACK_FRAMES - (TRACK_FRAMES >> 2)),
+            "an impossible exit point was used rather than clamped"
+        );
+
+        // And one before the track began is clamped the other way.
+        let early = transition_start(
+            Frames::new(1000),
+            Frames::new(1000 + TRACK_FRAMES),
+            &candidate,
+            overlap,
+        );
+        assert!(early.get() >= 1000);
+    }
+
+    #[test]
+    fn the_set_records_the_tempo_it_runs_at() {
+        // Two records playing together run at one tempo, and it belongs to the
+        // set rather than to either of them. Without this the timeline has no
+        // grid and every downstream feature that snaps has nothing to snap to.
+        let candidates = library();
+        let plan = plan_for(&candidates);
+        let mut ids = PlacementIds::starting_at(1);
+        let mix = render(&plan, &candidates, RATE, &mut ids).expect("renders");
+
+        let mut state = ProjectState::default();
+        for operation in mix.operations() {
+            state.apply(operation);
+        }
+
+        assert!(
+            state.tempo_changes.contains_key(&0),
+            "the set does not record the tempo it opens at"
+        );
+        assert_eq!(
+            state.tempo_changes.len(),
+            plan.tracks().len(),
+            "there should be one tempo change per track"
+        );
+
+        // The change belongs at the *end* of each transition: during the
+        // overlap the two records are matched and the outgoing one is still
+        // setting the pulse.
+        for transition in mix.transitions() {
+            assert!(
+                state.tempo_changes.contains_key(&transition.end().get()),
+                "no tempo change at the end of a transition"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tempo_change_undoes_like_any_other_edit() {
+        let candidates = library();
+        let plan = plan_for(&candidates);
+        let mut ids = PlacementIds::starting_at(1);
+        let mix = render(&plan, &candidates, RATE, &mut ids).expect("renders");
+
+        let mut state = ProjectState::default();
+        let mut inverses = Vec::new();
+        for operation in mix.operations() {
+            if let Some(inverse) = state.inverse_of(operation) {
+                inverses.push(inverse);
+            }
+            state.apply(operation);
+        }
+        assert!(!state.tempo_changes.is_empty());
+
+        for inverse in inverses.iter().rev() {
+            state.apply(inverse);
+        }
+        assert!(
+            state.tempo_changes.is_empty(),
+            "undoing the render left tempo changes behind"
+        );
     }
 
     #[test]

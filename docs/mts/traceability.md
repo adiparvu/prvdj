@@ -158,6 +158,8 @@ did not have would be worse than no row at all.
 | The technique is explained by the same evidence as the choice | ADR-0006 | `prv-mix::render::choose_technique` | `the_technique_follows_the_evidence`, `better_evidence_never_produces_a_more_cautious_technique` | **Verified** |
 | Generated transitions are editable | MP#3B, MP#21 | `prv-mix::render::automation_for` | `every_transition_produces_automation_on_both_lanes` | **Verified** |
 | Identity allocation stays with the caller | MP#24 | `prv-mix::render::PlacementIds` | `identifiers_come_from_the_caller_and_never_repeat` | **Verified** |
+| The set carries the tempo it runs at | MP#3B, MP#21 | `prv-project::OperationPayload::SetTempo` | `a_tempo_change_is_a_document_value_like_any_other`, `the_set_records_the_tempo_it_runs_at` | **Verified** |
+| Transitions land on the analysed structure | MP#3B, MP#20 | `prv-mix::render::transition_start` | `a_transition_lands_on_the_outgoing_tracks_exit_point`, `an_exit_point_too_late_to_use_is_clamped_rather_than_trusted` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

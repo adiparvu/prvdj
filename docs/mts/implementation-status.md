@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 10._
+_Last updated: Sprint 11._
 
 ## Sprint 0 — Foundation
 
@@ -136,6 +136,15 @@ _Last updated: Sprint 10._
 | `prv-mix::render` operation emission | Completed | Verified | An AI mix is an ordinary edit: undoable, branchable, editable, with no code for it |
 | Overlap length from evidence | Completed | Verified | Quantised to whole bars; better matches given more room |
 | Transition automation | Completed | Verified | Every technique expressed as automation, so a generated transition is editable |
+
+## Sprint 11 — Transitions land where the music invites them
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| Tempo operations in the log | Completed | Verified | Keyed by frames, because a tick position depends on the map itself |
+| Tempo in the state fold, with inverses | Completed | Verified | Undoes to what was there, or to its absence |
+| Transitions placed at the analysed exit | Completed | Verified | Falls back to the naive placement; a stale exit point is clamped |
+| The set records the tempo it runs at | Completed | Verified | Changed at the end of a transition, not the start |
 
 ## Not started
 

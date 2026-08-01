@@ -1,7 +1,7 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
-use prv_time::Frames;
+use prv_time::{Frames, Tempo};
 
 use crate::operation::{MarkerId, MarkerKind, OperationPayload, PlacementId, TrackRef};
 use crate::parameter::{Interpolation, ParameterAddress};
@@ -120,6 +120,15 @@ pub struct ProjectState {
     /// order on every platform and every run, which is what makes a rendered
     /// export match a preview and a synchronised project match its source.
     pub automation: BTreeMap<ParameterAddress, AutomationTrack>,
+
+    /// Tempo changes, keyed by the frame at which each takes effect.
+    ///
+    /// A set has one tempo at a time; two records playing together run at that
+    /// one tempo rather than at either of their own. Storing frames rather than
+    /// ticks is deliberate: a tick position depends on the tempo map, so a map
+    /// keyed by ticks would define itself in terms of itself. `prv-time` builds
+    /// the tick-based structure it needs from this.
+    pub tempo_changes: BTreeMap<i64, Tempo>,
 }
 
 impl ProjectState {
@@ -242,6 +251,12 @@ impl ProjectState {
             OperationPayload::SetAutomationEnabled { address, enabled } => {
                 self.automation.entry(address.clone()).or_default().enabled = *enabled;
             }
+            OperationPayload::SetTempo { position, tempo } => {
+                self.tempo_changes.insert(position.get(), *tempo);
+            }
+            OperationPayload::RemoveTempo { position } => {
+                self.tempo_changes.remove(&position.get());
+            }
         }
         // No wildcard arm. `non_exhaustive` binds other crates, not this one,
         // so within the crate that defines the payload the compiler still
@@ -338,6 +353,27 @@ impl ProjectState {
             OperationPayload::SetAutomationPoint { .. }
             | OperationPayload::RemoveAutomationPoint { .. }
             | OperationPayload::SetAutomationEnabled { .. } => self.inverse_of_automation(payload),
+
+            // A tempo change undoes to whatever was at that position, or to its
+            // absence. Both are operations, so undo stays an append.
+            OperationPayload::SetTempo { position, .. } => {
+                Some(self.tempo_changes.get(&position.get()).map_or(
+                    OperationPayload::RemoveTempo {
+                        position: *position,
+                    },
+                    |existing| OperationPayload::SetTempo {
+                        position: *position,
+                        tempo: *existing,
+                    },
+                ))
+            }
+            OperationPayload::RemoveTempo { position } => {
+                let existing = self.tempo_changes.get(&position.get())?;
+                Some(OperationPayload::SetTempo {
+                    position: *position,
+                    tempo: *existing,
+                })
+            }
         }
         // No wildcard arm, for the same reason `apply` has none: a variant
         // added without an inverse would be silently un-undoable.
@@ -561,6 +597,56 @@ mod tests {
                 lane: 2
             })
         );
+    }
+
+    #[test]
+    fn a_tempo_change_is_a_document_value_like_any_other() {
+        // A set has one tempo at a time, and it belongs to the set rather than
+        // to either record playing. Keyed by frames rather than ticks because a
+        // tick position depends on the tempo map, and a map keyed by ticks
+        // would define itself in terms of itself.
+        use prv_time::Tempo;
+
+        let mut state = ProjectState::default();
+        let opening = Tempo::from_bpm(124.0).expect("valid");
+        let later = Tempo::from_bpm(128.0).expect("valid");
+
+        let set_opening = OperationPayload::SetTempo {
+            position: Frames::ZERO,
+            tempo: opening,
+        };
+        let undo_opening = state.inverse_of(&set_opening).expect("there is an inverse");
+        state.apply(&set_opening);
+        assert_eq!(state.tempo_changes.get(&0), Some(&opening));
+
+        // Changing the same point undoes to what was there, not to nothing.
+        let change = OperationPayload::SetTempo {
+            position: Frames::ZERO,
+            tempo: later,
+        };
+        let undo_change = state.inverse_of(&change).expect("there is an inverse");
+        state.apply(&change);
+        assert_eq!(state.tempo_changes.get(&0), Some(&later));
+        state.apply(&undo_change);
+        assert_eq!(
+            state.tempo_changes.get(&0),
+            Some(&opening),
+            "undoing a tempo change did not restore the earlier tempo"
+        );
+
+        state.apply(&undo_opening);
+        assert!(
+            state.tempo_changes.is_empty(),
+            "undoing the first tempo left a change behind"
+        );
+
+        // Removing something that was never there is not undoable, and says so
+        // rather than inventing an operation.
+        assert!(state
+            .inverse_of(&OperationPayload::RemoveTempo {
+                position: Frames::new(999)
+            })
+            .is_none());
     }
 
     #[test]

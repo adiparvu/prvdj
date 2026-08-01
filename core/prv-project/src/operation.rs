@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::parameter::{Interpolation, ParameterAddress};
 
-use prv_time::Frames;
+use prv_time::{Frames, Tempo};
 
 /// A device that can author operations.
 ///
@@ -351,6 +351,25 @@ pub enum OperationPayload {
         position: Frames,
     },
 
+    /// Sets the tempo the set runs at from a position onward.
+    ///
+    /// A DJ set has one tempo at a time and changes it at transitions, which is
+    /// why this is a point on a map rather than a property of a placement: two
+    /// records playing together run at *one* tempo, and it belongs to the set
+    /// rather than to either of them.
+    SetTempo {
+        /// Where the tempo takes effect.
+        position: Frames,
+        /// The tempo from there on.
+        tempo: Tempo,
+    },
+
+    /// Removes a tempo change.
+    RemoveTempo {
+        /// Where the change sits.
+        position: Frames,
+    },
+
     /// Turns a whole automation lane on or off.
     ///
     /// A disabled lane keeps its points. Master Prompt #9 forbids losing a
@@ -384,6 +403,9 @@ impl OperationPayload {
             Self::SetAutomationPoint { address, .. }
             | Self::RemoveAutomationPoint { address, .. }
             | Self::SetAutomationEnabled { address, .. } => Target::Automation(address.clone()),
+            Self::SetTempo { position, .. } | Self::RemoveTempo { position } => {
+                Target::Tempo(*position)
+            }
         }
     }
 
@@ -434,6 +456,8 @@ pub enum Target {
     Placement(PlacementId),
     /// One marker.
     Marker(MarkerId),
+    /// One tempo change, identified by where it sits.
+    Tempo(Frames),
     /// One automation lane, named by the parameter it drives.
     ///
     /// The lane rather than the individual point. Two people moving different
@@ -451,6 +475,7 @@ impl fmt::Display for Target {
             Self::Placement(id) => write!(f, "{id}"),
             Self::Marker(id) => write!(f, "{id}"),
             Self::Automation(address) => write!(f, "automation on {address}"),
+            Self::Tempo(position) => write!(f, "the tempo at frame {}", position.get()),
         }
     }
 }
