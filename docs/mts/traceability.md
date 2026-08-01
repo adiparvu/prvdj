@@ -160,6 +160,8 @@ did not have would be worse than no row at all.
 | Identity allocation stays with the caller | MP#24 | `prv-mix::render::PlacementIds` | `identifiers_come_from_the_caller_and_never_repeat` | **Verified** |
 | The set carries the tempo it runs at | MP#3B, MP#21 | `prv-project::OperationPayload::SetTempo` | `a_tempo_change_is_a_document_value_like_any_other`, `the_set_records_the_tempo_it_runs_at` | **Verified** |
 | Transitions land on the analysed structure | MP#3B, MP#20 | `prv-mix::render::transition_start` | `a_transition_lands_on_the_outgoing_tracks_exit_point`, `an_exit_point_too_late_to_use_is_clamped_rather_than_trusted` | **Verified** |
+| A hand edit and a generated edit are the same object | MP#3B, ADR-0003 | `prv-timeline::Edit` | `an_edit_applied_to_the_log_rebuilds_the_same_timeline`, `a_split_records_both_halves` | **Verified** |
+| Deleting a clip does not silently lose its automation | MP#9 | `prv-timeline::Timeline::remove` | `removing_a_clip_records_its_automation_going_too` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

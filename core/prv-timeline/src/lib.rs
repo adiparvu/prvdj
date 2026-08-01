@@ -21,6 +21,20 @@
 //! going back in time is how a project ends up able to reach a state neither of
 //! them believes in.
 //!
+//! # An edit is an operation
+//!
+//! Every editing method returns the operations that record what it did, as well
+//! as applying them. ADR-0003 makes the log the source of truth, so an edit is
+//! not something that happens *to* the timeline — it is an operation appended to
+//! the log, after which the fold says what the timeline is. Returning both keeps
+//! that discipline affordable: the caller appends, and the user dragging a clip
+//! still sees it move at sixty frames a second.
+//!
+//! The operations are returned rather than appended here because appending is
+//! the caller's decision. An edit made mid-drag is provisional, and only the
+//! end of the gesture should enter the history — otherwise one drag becomes four
+//! hundred undo steps.
+//!
 //! # Two contexts, one crate
 //!
 //! Editing happens off the audio thread and may do whatever it likes.
@@ -41,7 +55,7 @@
 //! # Example
 //!
 //! ```
-//! use prv_project::PlacementId;
+//! use prv_project::{PlacementId, TrackRef};
 //! use prv_time::{BeatGrid, Frames, SampleRate, SnapResolution, Tempo, TimeSignature};
 //! use prv_timeline::{
 //!     AutomationLane, AutomationPoint, Clip, Interpolation, ParameterAddress, ParameterKey,
@@ -60,12 +74,18 @@
 //! // A slightly late drop snaps onto the bar line.
 //! let placed = timeline
 //!     .add(
-//!         Clip::new(PlacementId::new(1), 0, Frames::new(bar.get() + 300), bar),
+//!         Clip::new(
+//!             PlacementId::new(1),
+//!             TrackRef::new(42),
+//!             0,
+//!             Frames::new(bar.get() + 300),
+//!             bar,
+//!         ),
 //!         &grid,
 //!         Snap::To(SnapResolution::Bar),
 //!     )
 //!     .unwrap();
-//! assert_eq!(placed.start(), bar);
+//! assert_eq!(placed.clip().unwrap().start(), bar);
 //!
 //! // A filter sweep across that bar.
 //! let address =
@@ -100,4 +120,4 @@ pub use prv_project::{
     Interpolation, ParameterAddress, ParameterError, ParameterKey, ParameterOwner,
     PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
 };
-pub use timeline::{Clip, EditError, Snap, Timeline, MAX_CLIPS, MAX_LANES};
+pub use timeline::{Clip, Edit, EditError, Snap, Timeline, MAX_CLIPS, MAX_LANES};

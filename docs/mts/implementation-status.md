@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 11._
+_Last updated: Sprint 12._
 
 ## Sprint 0 — Foundation
 
@@ -145,6 +145,15 @@ _Last updated: Sprint 11._
 | Tempo in the state fold, with inverses | Completed | Verified | Undoes to what was there, or to its absence |
 | Transitions placed at the analysed exit | Completed | Verified | Falls back to the naive placement; a stale exit point is clamped |
 | The set records the tempo it runs at | Completed | Verified | Changed at the end of a transition, not the start |
+
+## Sprint 12 — Every edit is an operation
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-timeline::Edit` | Completed | Verified | A gesture is a list of operations, not one payload per gesture |
+| Clips carry their media reference | Completed | Verified | Makes ADR-0003's "the project refers to media" structural |
+| Edits emit operations | Completed | Verified | The cache and the fold agree, tested end to end |
+| Deleting a clip records its automation going with it | Completed | Verified | Undoing a deletion restores both |
 
 ## Not started
 

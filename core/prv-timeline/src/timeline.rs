@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use prv_project::PlacementId;
+use prv_project::{OperationPayload, PlacementId, TrackRef};
 use prv_time::{BeatGrid, Frames, SnapResolution};
 
 use crate::automation::AutomationLane;
@@ -47,6 +47,7 @@ pub const MAX_LANES: u32 = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Clip {
     id: PlacementId,
+    track: TrackRef,
     lane: u32,
     start: Frames,
     length: Frames,
@@ -56,9 +57,16 @@ pub struct Clip {
 impl Clip {
     /// Creates a clip.
     #[must_use]
-    pub const fn new(id: PlacementId, lane: u32, start: Frames, length: Frames) -> Self {
+    pub const fn new(
+        id: PlacementId,
+        track: TrackRef,
+        lane: u32,
+        start: Frames,
+        length: Frames,
+    ) -> Self {
         Self {
             id,
+            track,
             lane,
             start,
             length,
@@ -77,6 +85,16 @@ impl Clip {
     #[must_use]
     pub const fn id(self) -> PlacementId {
         self.id
+    }
+
+    /// Which library track it plays.
+    ///
+    /// A clip refers to media rather than containing it — ADR-0003's rule that
+    /// sharing a project shares the document and not the audio, expressed in
+    /// the type.
+    #[must_use]
+    pub const fn track(self) -> TrackRef {
+        self.track
     }
 
     /// Which lane it sits on.
@@ -206,6 +224,92 @@ impl Snap {
     }
 }
 
+/// The result of an edit: the new clip, and the operation that records it.
+///
+/// # Why both
+///
+/// ADR-0003 makes the log the source of truth and the state a pure fold over
+/// it, so an edit is not something that *happens to* the timeline — it is an
+/// operation that is appended, after which the fold says what the timeline is.
+///
+/// Returning both keeps that discipline affordable. The caller appends the
+/// operation to the log, which is what makes the edit real; the timeline has
+/// already applied the same change, so a user dragging a clip sees it move at
+/// sixty frames a second instead of waiting for the whole document to be
+/// refolded. The timeline is a cache of the fold kept in step by applying the
+/// same edit, and if the two ever disagree the log wins —
+/// [`Timeline::from_project`] restores it.
+///
+/// The operation is *returned rather than appended here* because appending is
+/// the caller's decision: an edit made during a drag is provisional, and only
+/// the gesture's end should enter the history. A timeline that appended on
+/// every intermediate position would give a user four hundred undo steps for
+/// one drag.
+/// One gesture can be more than one operation — trimming the front of a clip
+/// moves it *and* shortens it, and a split trims one clip and places another —
+/// so an edit carries a list rather than a single payload. Collapsing them into
+/// one would need a payload variant per gesture, and the log would then grow a
+/// vocabulary shaped by the interface rather than by the document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Edit {
+    clips: Vec<Clip>,
+    operations: Vec<OperationPayload>,
+}
+
+impl Edit {
+    /// Every clip the edit produced, in the order it produced them.
+    #[must_use]
+    pub fn clips(&self) -> &[Clip] {
+        &self.clips
+    }
+
+    /// The clip an edit produced, for the gestures that produce exactly one.
+    #[must_use]
+    pub fn clip(&self) -> Option<Clip> {
+        self.clips.first().copied()
+    }
+
+    /// The operations that record the edit, in the order they must be applied.
+    #[must_use]
+    pub fn operations(&self) -> &[OperationPayload] {
+        &self.operations
+    }
+
+    /// Consumes the edit and returns its operations.
+    #[must_use]
+    pub fn into_operations(self) -> Vec<OperationPayload> {
+        self.operations
+    }
+}
+
+/// The operation that records a clip's placement.
+fn place(clip: Clip) -> OperationPayload {
+    OperationPayload::PlaceTrack {
+        placement: clip.id,
+        track: clip.track,
+        position: clip.start,
+        length: clip.length,
+        lane: clip.lane,
+    }
+}
+
+/// The operation that records a clip's new position.
+fn move_to(clip: Clip) -> OperationPayload {
+    OperationPayload::MovePlacement {
+        placement: clip.id,
+        position: clip.start,
+        lane: clip.lane,
+    }
+}
+
+/// The operation that records a clip's new length.
+fn trim(clip: Clip) -> OperationPayload {
+    OperationPayload::TrimPlacement {
+        placement: clip.id,
+        length: clip.length,
+    }
+}
+
 /// The timeline.
 #[derive(Debug, Clone)]
 pub struct Timeline {
@@ -300,7 +404,7 @@ impl Timeline {
     ///
     /// Returns [`EditError`] for an out-of-range lane, a non-positive length,
     /// an overlap with an existing clip on the same lane, or a full timeline.
-    pub fn add(&mut self, clip: Clip, grid: &BeatGrid, snap: Snap) -> Result<Clip, EditError> {
+    pub fn add(&mut self, clip: Clip, grid: &BeatGrid, snap: Snap) -> Result<Edit, EditError> {
         if clip.lane >= MAX_LANES {
             return Err(EditError::LaneOutOfRange {
                 lane: clip.lane,
@@ -320,7 +424,10 @@ impl Timeline {
         };
         self.check_free(snapped)?;
         self.clips.insert(snapped.id.get(), snapped);
-        Ok(snapped)
+        Ok(Edit {
+            clips: vec![snapped],
+            operations: vec![place(snapped)],
+        })
     }
 
     /// Moves a clip to a new lane and position.
@@ -335,7 +442,7 @@ impl Timeline {
         start: Frames,
         grid: &BeatGrid,
         snap: Snap,
-    ) -> Result<Clip, EditError> {
+    ) -> Result<Edit, EditError> {
         let Some(&existing) = self.clips.get(&id.get()) else {
             return Err(EditError::UnknownClip { clip: id });
         };
@@ -353,7 +460,10 @@ impl Timeline {
         };
         self.check_free(moved)?;
         self.clips.insert(moved.id.get(), moved);
-        Ok(moved)
+        Ok(Edit {
+            clips: vec![moved],
+            operations: vec![move_to(moved)],
+        })
     }
 
     /// Changes a clip's length, keeping its start.
@@ -367,7 +477,7 @@ impl Timeline {
         end: Frames,
         grid: &BeatGrid,
         snap: Snap,
-    ) -> Result<Clip, EditError> {
+    ) -> Result<Edit, EditError> {
         let Some(&existing) = self.clips.get(&id.get()) else {
             return Err(EditError::UnknownClip { clip: id });
         };
@@ -383,7 +493,10 @@ impl Timeline {
         };
         self.check_free(trimmed)?;
         self.clips.insert(trimmed.id.get(), trimmed);
-        Ok(trimmed)
+        Ok(Edit {
+            clips: vec![trimmed],
+            operations: vec![trim(trimmed)],
+        })
     }
 
     /// Moves a clip's start without moving what plays there.
@@ -402,7 +515,7 @@ impl Timeline {
         start: Frames,
         grid: &BeatGrid,
         snap: Snap,
-    ) -> Result<Clip, EditError> {
+    ) -> Result<Edit, EditError> {
         let Some(&existing) = self.clips.get(&id.get()) else {
             return Err(EditError::UnknownClip { clip: id });
         };
@@ -422,7 +535,13 @@ impl Timeline {
         };
         self.check_free(trimmed)?;
         self.clips.insert(trimmed.id.get(), trimmed);
-        Ok(trimmed)
+        // Trimming the front is two changes, not one: the clip moves and it
+        // shortens. Both are recorded, in the order that leaves the document
+        // consistent at every step.
+        Ok(Edit {
+            clips: vec![trimmed],
+            operations: vec![move_to(trimmed), trim(trimmed)],
+        })
     }
 
     /// Splits a clip in two at a position.
@@ -442,7 +561,7 @@ impl Timeline {
         new_id: PlacementId,
         grid: &BeatGrid,
         snap: Snap,
-    ) -> Result<(Clip, Clip), EditError> {
+    ) -> Result<Edit, EditError> {
         let Some(&existing) = self.clips.get(&id.get()) else {
             return Err(EditError::UnknownClip { clip: id });
         };
@@ -462,6 +581,9 @@ impl Timeline {
         };
         let second = Clip {
             id: new_id,
+            // The same media, from further in. A split is structural: both
+            // halves play exactly what the whole would have played.
+            track: existing.track,
             start: position,
             length: Frames::new(existing.length.get().saturating_sub(consumed)),
             source_offset: Frames::new(existing.source_offset.get().saturating_add(consumed)),
@@ -470,7 +592,10 @@ impl Timeline {
 
         self.clips.insert(first.id.get(), first);
         self.clips.insert(second.id.get(), second);
-        Ok((first, second))
+        Ok(Edit {
+            clips: vec![first, second],
+            operations: vec![trim(first), place(second)],
+        })
     }
 
     /// Removes a clip and every automation lane that belonged only to it.
@@ -481,12 +606,33 @@ impl Timeline {
     /// lane pointing at a placement that no longer exists is a lane that can
     /// never be edited and never be heard. Automation on the *lane* stays,
     /// because the lane is still there.
-    pub fn remove(&mut self, id: PlacementId) -> Option<Clip> {
+    pub fn remove(&mut self, id: PlacementId) -> Option<Edit> {
         let removed = self.clips.remove(&id.get())?;
         let owner = ParameterOwner::Placement(id);
+
+        // The automation that went with the clip is removed from the document
+        // too, and each removal is its own operation — so undoing the deletion
+        // brings the automation back with the clip rather than restoring a bare
+        // placement the user then has to re-draw.
+        let mut operations = vec![OperationPayload::RemovePlacement { placement: id }];
+        for lane in &self.automation {
+            if !lane.address().is_within(&owner) {
+                continue;
+            }
+            for point in lane.points() {
+                operations.push(OperationPayload::RemoveAutomationPoint {
+                    address: lane.address().clone(),
+                    position: point.position(),
+                });
+            }
+        }
         self.automation
             .retain(|lane| !lane.address().is_within(&owner));
-        Some(removed)
+
+        Some(Edit {
+            clips: vec![removed],
+            operations,
+        })
     }
 
     /// Adds or replaces an automation lane.
@@ -557,7 +703,13 @@ impl Timeline {
         let mut skipped = 0_usize;
 
         for (id, placement) in &state.placements {
-            let clip = Clip::new(*id, placement.lane, placement.position, placement.length);
+            let clip = Clip::new(
+                *id,
+                placement.track,
+                placement.lane,
+                placement.position,
+                placement.length,
+            );
             if clip.lane >= MAX_LANES
                 || clip.length.get() <= 0
                 || timeline.clips.len() >= MAX_CLIPS
@@ -638,6 +790,7 @@ mod tests {
     fn clip(id: u64, lane: u32, start: i64, length: i64) -> Clip {
         Clip::new(
             PlacementId::new(id),
+            TrackRef::new(id),
             lane,
             Frames::new(start),
             Frames::new(length),
@@ -655,12 +808,16 @@ mod tests {
                 &grid(),
                 Snap::To(SnapResolution::Bar),
             )
-            .expect("valid");
+            .expect("valid")
+            .clip()
+            .expect("one clip");
         assert_eq!(placed.start(), Frames::new(BAR));
 
         let exact = timeline
             .add(clip(2, 1, BAR + 300, BAR), &grid(), Snap::Off)
-            .expect("valid");
+            .expect("valid")
+            .clip()
+            .expect("one clip");
         assert_eq!(
             exact.start(),
             Frames::new(BAR + 300),
@@ -714,7 +871,9 @@ mod tests {
                 &grid(),
                 Snap::Off,
             )
-            .expect("valid");
+            .expect("valid")
+            .clip()
+            .expect("one clip");
 
         assert_eq!(trimmed.start(), Frames::new(BAR * 2));
         assert_eq!(trimmed.length(), Frames::new(BAR * 3));
@@ -740,7 +899,7 @@ mod tests {
             )
             .expect("valid");
 
-        let (first, second) = timeline
+        let split = timeline
             .split(
                 PlacementId::new(1),
                 Frames::new(BAR * 3),
@@ -749,6 +908,8 @@ mod tests {
                 Snap::Off,
             )
             .expect("inside the clip");
+        let first = split.clips().first().copied().expect("two halves");
+        let second = split.clips().get(1).copied().expect("two halves");
 
         assert_eq!(first.start(), Frames::new(BAR));
         assert_eq!(first.end(), Frames::new(BAR * 3));
@@ -814,7 +975,7 @@ mod tests {
         assert_eq!(timeline.automation().len(), 2);
 
         let removed = timeline.remove(PlacementId::new(1)).expect("it was there");
-        assert_eq!(removed.id(), PlacementId::new(1));
+        assert_eq!(removed.clip().map(Clip::id), Some(PlacementId::new(1)));
         assert!(timeline.automation_for(&on_clip).is_none());
         assert!(
             timeline.automation_for(&on_lane).is_some(),
@@ -1024,7 +1185,9 @@ mod tests {
                 &grid(),
                 Snap::Off,
             )
-            .expect("a clip may overlap where it used to be");
+            .expect("a clip may overlap where it used to be")
+            .clip()
+            .expect("one clip");
         assert_eq!(moved.start(), Frames::new(BAR * 5));
         assert_eq!(timeline.clip_count(), 1);
     }
@@ -1103,6 +1266,156 @@ mod tests {
             timeline.clips().next().map(|clip| clip.lane()),
             Some(0),
             "a clip was moved to a lane the user did not choose"
+        );
+    }
+
+    #[test]
+    fn an_edit_applied_to_the_log_rebuilds_the_same_timeline() {
+        use prv_project::ProjectState;
+
+        // The property the whole `Edit` type exists for. The timeline is a
+        // cache of the fold, kept in step by applying the same change; if the
+        // two ever disagreed, a user would see one thing and their project
+        // would contain another. This is what says they do not.
+        let mut timeline = Timeline::new();
+        let mut state = ProjectState::default();
+
+        let record = |edit: &Edit, state: &mut ProjectState| {
+            for operation in edit.operations() {
+                state.apply(operation);
+            }
+        };
+
+        let added = timeline
+            .add(clip(1, 0, 0, BAR * 8), &grid(), Snap::Off)
+            .expect("valid");
+        record(&added, &mut state);
+
+        let moved = timeline
+            .move_clip(
+                PlacementId::new(1),
+                1,
+                Frames::new(BAR * 2),
+                &grid(),
+                Snap::Off,
+            )
+            .expect("valid");
+        record(&moved, &mut state);
+
+        let trimmed = timeline
+            .trim_start(
+                PlacementId::new(1),
+                Frames::new(BAR * 4),
+                &grid(),
+                Snap::Off,
+            )
+            .expect("valid");
+        record(&trimmed, &mut state);
+
+        let (rebuilt, skipped) = Timeline::from_project(&state);
+        assert_eq!(skipped, 0);
+
+        let live: Vec<Clip> = timeline.clips().copied().collect();
+        let folded: Vec<Clip> = rebuilt.clips().copied().collect();
+        assert_eq!(live.len(), folded.len());
+        for (edited, refolded) in live.iter().zip(folded.iter()) {
+            assert_eq!(edited.id(), refolded.id());
+            assert_eq!(edited.start(), refolded.start(), "positions disagree");
+            assert_eq!(edited.length(), refolded.length(), "lengths disagree");
+            assert_eq!(edited.lane(), refolded.lane(), "lanes disagree");
+            assert_eq!(
+                edited.track(),
+                refolded.track(),
+                "media references disagree"
+            );
+        }
+    }
+
+    #[test]
+    fn a_split_records_both_halves() {
+        use prv_project::{OperationPayload, ProjectState};
+
+        // A split is one gesture and two operations. Recording only the trim
+        // would leave the second half existing on screen and nowhere in the
+        // document.
+        let mut timeline = Timeline::new();
+        timeline
+            .add(clip(1, 0, 0, BAR * 8), &grid(), Snap::Off)
+            .expect("valid");
+
+        let split = timeline
+            .split(
+                PlacementId::new(1),
+                Frames::new(BAR * 4),
+                PlacementId::new(2),
+                &grid(),
+                Snap::Off,
+            )
+            .expect("inside the clip");
+
+        assert_eq!(split.clips().len(), 2);
+        assert_eq!(split.operations().len(), 2);
+
+        let mut state = ProjectState::default();
+        for operation in timeline
+            .clips()
+            .map(|clip| OperationPayload::PlaceTrack {
+                placement: clip.id(),
+                track: clip.track(),
+                position: clip.start(),
+                length: clip.length(),
+                lane: clip.lane(),
+            })
+            .collect::<Vec<_>>()
+        {
+            state.apply(&operation);
+        }
+        assert_eq!(state.placements.len(), 2);
+    }
+
+    #[test]
+    fn removing_a_clip_records_its_automation_going_too() {
+        // Undoing a deletion should bring the automation back with the clip
+        // rather than restoring a bare placement the user then has to re-draw.
+        let mut timeline = Timeline::new();
+        timeline
+            .add(clip(1, 0, 0, BAR * 4), &grid(), Snap::Off)
+            .expect("valid");
+
+        let address = ParameterAddress::new(
+            ParameterOwner::Placement(PlacementId::new(1)),
+            ParameterKey::Filter,
+        )
+        .expect("valid");
+        let mut lane = AutomationLane::new(address);
+        lane.insert(AutomationPoint::new(
+            Frames::ZERO,
+            0.5,
+            Interpolation::Linear,
+        ))
+        .expect("room");
+        lane.insert(AutomationPoint::new(
+            Frames::new(BAR),
+            1.0,
+            Interpolation::Linear,
+        ))
+        .expect("room");
+        timeline.set_automation(lane);
+
+        let removed = timeline.remove(PlacementId::new(1)).expect("it was there");
+        let automation_removals = removed
+            .operations()
+            .iter()
+            .filter(|operation| {
+                matches!(
+                    operation,
+                    prv_project::OperationPayload::RemoveAutomationPoint { .. }
+                )
+            })
+            .count();
+        assert_eq!(
+            automation_removals, 2,
+            "the clip's automation was not recorded as going with it"
         );
     }
 
