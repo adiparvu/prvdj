@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 8._
+_Last updated: Sprint 9._
 
 ## Sprint 0 — Foundation
 
@@ -117,6 +117,16 @@ _Last updated: Sprint 8._
 | `prv-timeline` automation lanes | Completed | Verified | Binary-search evaluation, allocation-free; no shape overshoots |
 | `prv-timeline` clips and lanes | Completed | Verified | Trimming the front does not slide the audio; splitting changes no sound |
 | `prv-timeline` editing with snapping | Completed | Verified | Opt-out per edit rather than a global mode; overlap refused, not resolved |
+
+## Sprint 9 — Automation joins the document
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| ADR-0007 the project crate is the document model | Completed | — | Refines ADR-0003's scope; resolves a dependency cycle structurally |
+| Parameter identity moved to `prv-project` | Completed | Verified | Identity is persisted, description is not; the line is persistence |
+| Automation operations in the log | Completed | Verified | Undo, versions, branching and sync inherited rather than reimplemented |
+| Automation in the state fold | Completed | Verified | Values clamped at the fold, once, where a foreign log arrives |
+| `Timeline::from_project` | Completed | Verified | Unholdable clips reported, never clamped into a lane the user did not choose |
 
 ## Not started
 

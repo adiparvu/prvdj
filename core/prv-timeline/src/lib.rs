@@ -34,7 +34,7 @@
 //!
 //! | Module | Question it answers |
 //! |--------|--------------------|
-//! | [`parameter`] | How do you name a parameter so the name still works next year? |
+//! | [`parameter`] | What values does a parameter take, and how does a control map onto it? |
 //! | [`automation`] | What value does that parameter have, at this moment? |
 //! | [`timeline`] | What plays, where, and what does an edit do? |
 //!
@@ -90,9 +90,14 @@ pub mod automation;
 pub mod parameter;
 pub mod timeline;
 
-pub use automation::{AutomationError, AutomationLane, AutomationPoint, Interpolation, MAX_POINTS};
-pub use parameter::{
-    ParameterAddress, ParameterCurve, ParameterDescriptor, ParameterError, ParameterKey,
-    ParameterOwner, ParameterUnit, PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
+pub use automation::{AutomationError, AutomationLane, AutomationPoint, MAX_POINTS};
+pub use parameter::{DescriptorError, ParameterCurve, ParameterDescriptor, ParameterUnit};
+
+// Re-exported so a caller building a timeline does not have to know which crate
+// owns which half of a parameter. Identity is the document's (ADR-0007);
+// description is this crate's.
+pub use prv_project::{
+    Interpolation, ParameterAddress, ParameterError, ParameterKey, ParameterOwner,
+    PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
 };
 pub use timeline::{Clip, EditError, Snap, Timeline, MAX_CLIPS, MAX_LANES};

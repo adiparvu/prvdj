@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use prv_time::Frames;
 
 use crate::operation::{MarkerId, MarkerKind, OperationPayload, PlacementId, TrackRef};
+use crate::parameter::{Interpolation, ParameterAddress};
 
 /// One appearance of a track on the timeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,51 @@ pub struct Marker {
     pub label: String,
 }
 
+/// One automation point, as the document stores it.
+///
+/// Deliberately not the timeline's `AutomationPoint`: this is the persisted
+/// form, and the timeline builds its own evaluable structure from it. Keeping
+/// the two apart is what lets the timeline change how it evaluates a curve —
+/// a lookup table, a different search — without changing what a project file
+/// means.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AutomationValue {
+    /// The normalised value, from zero to one.
+    pub value: f32,
+    /// How the value approaches the next point.
+    pub interpolation: Interpolation,
+}
+
+/// One parameter's automation, as the document stores it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AutomationTrack {
+    /// The points, keyed by frame position so the map keeps them in order and
+    /// one position holds at most one point.
+    pub points: BTreeMap<i64, AutomationValue>,
+    /// Whether the lane applies.
+    pub enabled: bool,
+}
+
+impl Default for AutomationTrack {
+    fn default() -> Self {
+        // A lane exists because a user drew on it, so it starts applied.
+        // Defaulting to disabled would make every automation edit silently do
+        // nothing until a second, undiscoverable action.
+        Self {
+            points: BTreeMap::new(),
+            enabled: true,
+        }
+    }
+}
+
+impl AutomationTrack {
+    /// Whether the track holds no points.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.points.is_empty()
+    }
+}
+
 /// The project, materialised.
 ///
 /// # Why the collections are ordered
@@ -55,7 +101,11 @@ pub struct Marker {
 /// must all be reproducible, and a hash map's order varies between runs. ADR-0006
 /// requires generation to be byte-identical across runs and platforms, and that
 /// guarantee cannot survive an unordered collection anywhere in the fold.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// `Eq` is not derived: automation carries an `f32`, and floating point has no
+/// total equality. `PartialEq` is what the fold's tests compare with, and
+/// claiming `Eq` would be a lie about the value's semantics.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProjectState {
     /// The project's name.
     pub name: String,
@@ -63,6 +113,13 @@ pub struct ProjectState {
     pub placements: BTreeMap<PlacementId, Placement>,
     /// Every marker, by identity.
     pub markers: BTreeMap<MarkerId, Marker>,
+
+    /// Automation, one lane per parameter address.
+    ///
+    /// A `BTreeMap` like the rest of the state: iteration order is the address
+    /// order on every platform and every run, which is what makes a rendered
+    /// export match a preview and a synchronised project match its source.
+    pub automation: BTreeMap<ParameterAddress, AutomationTrack>,
 }
 
 impl ProjectState {
@@ -146,7 +203,52 @@ impl ProjectState {
             OperationPayload::RemoveMarker { marker } => {
                 self.markers.remove(marker);
             }
+            OperationPayload::SetAutomationPoint {
+                address,
+                position,
+                value,
+                interpolation,
+            } => {
+                self.automation
+                    .entry(address.clone())
+                    .or_default()
+                    .points
+                    .insert(
+                        position.get(),
+                        AutomationValue {
+                            // Clamped here rather than trusted, because this
+                            // value reaches the audio thread and a log can
+                            // arrive from another device or an older build.
+                            value: if value.is_nan() {
+                                0.0
+                            } else {
+                                value.clamp(0.0, 1.0)
+                            },
+                            interpolation: *interpolation,
+                        },
+                    );
+            }
+            OperationPayload::RemoveAutomationPoint { address, position } => {
+                if let Some(track) = self.automation.get_mut(address) {
+                    track.points.remove(&position.get());
+                    // A lane with no points and nothing switched off is not a
+                    // lane. Leaving empty entries behind would grow the
+                    // document every time a user drew and erased a sweep.
+                    if track.points.is_empty() && track.enabled {
+                        self.automation.remove(address);
+                    }
+                }
+            }
+            OperationPayload::SetAutomationEnabled { address, enabled } => {
+                self.automation.entry(address.clone()).or_default().enabled = *enabled;
+            }
         }
+        // No wildcard arm. `non_exhaustive` binds other crates, not this one,
+        // so within the crate that defines the payload the compiler still
+        // demands every variant — which is exactly the guarantee wanted here. A
+        // variant added without a fold arm would be an edit that silently
+        // vanishes when the project is reopened, and this makes that a build
+        // failure rather than a support ticket.
     }
 
     /// The operation that would undo `payload`, given this state as it was
@@ -232,6 +334,72 @@ impl ProjectState {
                     label: existing.label.clone(),
                 })
             }
+
+            OperationPayload::SetAutomationPoint { .. }
+            | OperationPayload::RemoveAutomationPoint { .. }
+            | OperationPayload::SetAutomationEnabled { .. } => self.inverse_of_automation(payload),
+        }
+        // No wildcard arm, for the same reason `apply` has none: a variant
+        // added without an inverse would be silently un-undoable.
+    }
+
+    /// The inverse of an automation operation.
+    ///
+    /// Split out of [`ProjectState::inverse_of`] to keep that function
+    /// readable rather than because the automation cases are separate in
+    /// principle; they obey exactly the same rule as the rest.
+    fn inverse_of_automation(&self, payload: &OperationPayload) -> Option<OperationPayload> {
+        let existing_point = |address: &ParameterAddress, position: &Frames| {
+            self.automation
+                .get(address)
+                .and_then(|track| track.points.get(&position.get()))
+                .copied()
+        };
+
+        match payload {
+            // Setting a point undoes either to the point that was there or to
+            // its absence. Both are expressible as operations, which is what
+            // keeps undo an append rather than a rewind.
+            OperationPayload::SetAutomationPoint {
+                address, position, ..
+            } => Some(existing_point(address, position).map_or_else(
+                || OperationPayload::RemoveAutomationPoint {
+                    address: address.clone(),
+                    position: *position,
+                },
+                |existing| OperationPayload::SetAutomationPoint {
+                    address: address.clone(),
+                    position: *position,
+                    value: existing.value,
+                    interpolation: existing.interpolation,
+                },
+            )),
+
+            OperationPayload::RemoveAutomationPoint { address, position } => {
+                let existing = existing_point(address, position)?;
+                Some(OperationPayload::SetAutomationPoint {
+                    address: address.clone(),
+                    position: *position,
+                    value: existing.value,
+                    interpolation: existing.interpolation,
+                })
+            }
+
+            OperationPayload::SetAutomationEnabled { address, .. } => {
+                Some(OperationPayload::SetAutomationEnabled {
+                    address: address.clone(),
+                    // A lane that does not exist yet is enabled by default, so
+                    // that is what undoing a disable returns it to.
+                    enabled: self
+                        .automation
+                        .get(address)
+                        .is_none_or(|track| track.enabled),
+                })
+            }
+
+            // The caller matched the automation variants before delegating, so
+            // nothing else reaches here.
+            _ => None,
         }
     }
 
@@ -279,6 +447,12 @@ impl fmt::Display for ProjectState {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        reason = "a test that cannot build its own fixture should fail loudly"
+    )]
+
     use super::*;
 
     fn place(id: u64, position: i64, length: i64, lane: u32) -> OperationPayload {
@@ -387,6 +561,137 @@ mod tests {
                 lane: 2
             })
         );
+    }
+
+    #[test]
+    fn an_automation_edit_is_undoable_like_any_other() {
+        // The gap this closes. Automation was a timeline concept the log could
+        // not record, which meant every sweep a user drew was outside undo,
+        // outside versions and outside synchronisation.
+        use crate::parameter::{Interpolation, ParameterAddress, ParameterKey, ParameterOwner};
+
+        let address =
+            ParameterAddress::new(ParameterOwner::Master, ParameterKey::Filter).expect("valid");
+        let mut state = ProjectState::default();
+
+        let first = OperationPayload::SetAutomationPoint {
+            address: address.clone(),
+            position: Frames::new(1000),
+            value: 0.25,
+            interpolation: Interpolation::Linear,
+        };
+        // Undoing the creation of a point removes it, because there was
+        // nothing there before.
+        let undo_first = state.inverse_of(&first).expect("there is an inverse");
+        state.apply(&first);
+        assert_eq!(
+            state
+                .automation
+                .get(&address)
+                .and_then(|track| track.points.get(&1000))
+                .map(|point| point.value),
+            Some(0.25)
+        );
+
+        // Changing the same point undoes to its previous value, not to nothing.
+        let second = OperationPayload::SetAutomationPoint {
+            address: address.clone(),
+            position: Frames::new(1000),
+            value: 0.75,
+            interpolation: Interpolation::Smooth,
+        };
+        let undo_second = state.inverse_of(&second).expect("there is an inverse");
+        state.apply(&second);
+        state.apply(&undo_second);
+        assert_eq!(
+            state
+                .automation
+                .get(&address)
+                .and_then(|track| track.points.get(&1000))
+                .map(|point| point.value),
+            Some(0.25),
+            "undoing a value change did not restore the earlier value"
+        );
+
+        state.apply(&undo_first);
+        assert!(
+            !state.automation.contains_key(&address),
+            "undoing the first point left an empty lane behind"
+        );
+    }
+
+    #[test]
+    fn disabling_a_lane_keeps_its_points_and_undoes_cleanly() {
+        // Master Prompt #9: "turn this off for a moment" is not a request to
+        // delete it.
+        use crate::parameter::{Interpolation, ParameterAddress, ParameterKey, ParameterOwner};
+
+        let address =
+            ParameterAddress::new(ParameterOwner::Lane(2), ParameterKey::Gain).expect("valid");
+        let mut state = ProjectState::default();
+        state.apply(&OperationPayload::SetAutomationPoint {
+            address: address.clone(),
+            position: Frames::ZERO,
+            value: 0.5,
+            interpolation: Interpolation::Linear,
+        });
+
+        let disable = OperationPayload::SetAutomationEnabled {
+            address: address.clone(),
+            enabled: false,
+        };
+        let undo = state.inverse_of(&disable).expect("there is an inverse");
+        state.apply(&disable);
+
+        let track = state
+            .automation
+            .get(&address)
+            .expect("the lane is still there");
+        assert!(!track.enabled);
+        assert_eq!(track.points.len(), 1, "disabling discarded the points");
+
+        state.apply(&undo);
+        assert!(
+            state
+                .automation
+                .get(&address)
+                .is_some_and(|track| track.enabled),
+            "undoing a disable did not re-enable the lane"
+        );
+    }
+
+    #[test]
+    fn an_automation_value_from_the_log_is_clamped_before_it_is_stored() {
+        // A log can arrive from another device or an older build, and this
+        // value reaches the audio thread. Trusting it would let a non-number
+        // silence every filter it touches until the engine restarts.
+        use crate::parameter::{Interpolation, ParameterAddress, ParameterKey, ParameterOwner};
+
+        let address =
+            ParameterAddress::new(ParameterOwner::Master, ParameterKey::Gain).expect("valid");
+        let mut state = ProjectState::default();
+        for (position, value, expected) in [
+            (0_i64, f32::NAN, 0.0_f32),
+            (1, 9.0, 1.0),
+            (2, -3.0, 0.0),
+            (3, f32::INFINITY, 1.0),
+        ] {
+            state.apply(&OperationPayload::SetAutomationPoint {
+                address: address.clone(),
+                position: Frames::new(position),
+                value,
+                interpolation: Interpolation::Linear,
+            });
+            assert_eq!(
+                state
+                    .automation
+                    .get(&address)
+                    .and_then(|track| track.points.get(&position))
+                    .map(|point| point.value),
+                Some(expected),
+                "a value of {value} was stored unclamped"
+            );
+        }
     }
 
     #[test]

@@ -149,6 +149,10 @@ did not have would be worse than no row at all.
 | Editing snaps to the musical grid | MP#21 | `prv-timeline::Snap` | `an_added_clip_snaps_to_the_grid` | **Verified** |
 | Editing is non-destructive | MP#3C, MP#9, MP#21 | `prv-timeline::Timeline` | `trimming_the_front_does_not_slide_the_audio`, `splitting_is_structural_and_changes_no_sound` | **Verified** |
 | A destructive edit is refused, not resolved | MP#9, MP#21 | `prv-timeline::EditError::Overlap` | `overlapping_clips_on_one_lane_are_refused_rather_than_truncated` | **Verified** |
+| Automation is undoable like any other edit | MP#9, MP#21 | `prv-project::OperationPayload` | `an_automation_edit_is_undoable_like_any_other`, `disabling_a_lane_keeps_its_points_and_undoes_cleanly` | **Verified** |
+| Values from a foreign log are validated at the fold | MP#24, MP#26 | `prv-project::ProjectState::apply` | `an_automation_value_from_the_log_is_clamped_before_it_is_stored` | **Verified** |
+| The timeline is built from the document | ADR-0003, ADR-0007 | `prv-timeline::Timeline::from_project` | `a_timeline_is_built_from_the_materialised_document` | **Verified** |
+| An unopenable project is never the outcome | MP#9, MP#24 | `prv-timeline::Timeline::from_project` | `a_document_the_timeline_cannot_hold_is_reported_rather_than_clamped` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

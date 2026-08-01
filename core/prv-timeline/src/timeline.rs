@@ -30,7 +30,7 @@ use prv_project::PlacementId;
 use prv_time::{BeatGrid, Frames, SnapResolution};
 
 use crate::automation::AutomationLane;
-use crate::parameter::{ParameterAddress, ParameterOwner};
+use prv_project::{ParameterAddress, ParameterOwner};
 
 /// The most lanes a timeline may hold.
 ///
@@ -537,6 +537,61 @@ impl Timeline {
             .collect()
     }
 
+    /// Builds a timeline from a materialised project state.
+    ///
+    /// This is the seam ADR-0003 describes: the log is the truth, the state is
+    /// the fold, and this is the shape the timeline reads that fold in. It runs
+    /// once when a project is opened and again after a merge — never on the
+    /// audio thread, and never per frame.
+    ///
+    /// Clips that the document places outside the timeline's limits are
+    /// *skipped rather than clamped*, and the count of what was skipped is
+    /// returned. A project written by a future build, or a corrupted one, must
+    /// not be able to make this fail — a user unable to open their own project
+    /// is a worse outcome than one told that three clips could not be shown —
+    /// but it must also not silently move their work somewhere they did not put
+    /// it.
+    #[must_use]
+    pub fn from_project(state: &prv_project::ProjectState) -> (Self, usize) {
+        let mut timeline = Self::new();
+        let mut skipped = 0_usize;
+
+        for (id, placement) in &state.placements {
+            let clip = Clip::new(*id, placement.lane, placement.position, placement.length);
+            if clip.lane >= MAX_LANES
+                || clip.length.get() <= 0
+                || timeline.clips.len() >= MAX_CLIPS
+                || timeline.check_free(clip).is_err()
+            {
+                skipped += 1;
+                continue;
+            }
+            timeline.clips.insert(id.get(), clip);
+        }
+
+        for (address, track) in &state.automation {
+            let mut lane = AutomationLane::new(address.clone());
+            lane.set_enabled(track.enabled);
+            for (position, value) in &track.points {
+                let point = crate::automation::AutomationPoint::new(
+                    Frames::new(*position),
+                    value.value,
+                    value.interpolation,
+                );
+                if lane.insert(point).is_err() {
+                    skipped += 1;
+                    break;
+                }
+            }
+            timeline.automation.push(lane);
+        }
+        timeline
+            .automation
+            .sort_by(|a, b| a.address().cmp(b.address()));
+
+        (timeline, skipped)
+    }
+
     /// Refuses an edit that would overlap an existing clip on the same lane.
     fn check_free(&self, clip: Clip) -> Result<(), EditError> {
         for existing in self.clips.values() {
@@ -563,8 +618,9 @@ mod tests {
     )]
 
     use super::*;
-    use crate::automation::{AutomationPoint, Interpolation};
-    use crate::parameter::ParameterKey;
+    use crate::automation::AutomationPoint;
+    use prv_project::Interpolation;
+    use prv_project::ParameterKey;
     use prv_time::{SampleRate, Tempo, TimeSignature};
 
     /// A bar at 120 BPM and 44.1 kHz is 88 200 frames.
@@ -971,6 +1027,83 @@ mod tests {
             .expect("a clip may overlap where it used to be");
         assert_eq!(moved.start(), Frames::new(BAR * 5));
         assert_eq!(timeline.clip_count(), 1);
+    }
+
+    #[test]
+    fn a_timeline_is_built_from_the_materialised_document() {
+        // The seam ADR-0003 describes: the log is the truth, the state is the
+        // fold, and the timeline is the shape that fold is read in. Automation
+        // recorded as operations must arrive here as an evaluable lane.
+        use prv_project::{OperationPayload, PlacementId as Id, ProjectState, TrackRef};
+
+        let mut state = ProjectState::default();
+        state.apply(&OperationPayload::PlaceTrack {
+            placement: Id::new(1),
+            track: TrackRef::new(10),
+            position: Frames::ZERO,
+            length: Frames::new(BAR * 4),
+            lane: 0,
+        });
+
+        let address =
+            ParameterAddress::new(ParameterOwner::Lane(0), ParameterKey::Filter).expect("valid");
+        state.apply(&OperationPayload::SetAutomationPoint {
+            address: address.clone(),
+            position: Frames::ZERO,
+            value: 0.0,
+            interpolation: Interpolation::Linear,
+        });
+        state.apply(&OperationPayload::SetAutomationPoint {
+            address: address.clone(),
+            position: Frames::new(BAR * 4),
+            value: 1.0,
+            interpolation: Interpolation::Linear,
+        });
+
+        let (timeline, skipped) = Timeline::from_project(&state);
+        assert_eq!(skipped, 0);
+        assert_eq!(timeline.clip_count(), 1);
+        assert_eq!(
+            timeline
+                .automation_for(&address)
+                .and_then(|lane| lane.value_at(Frames::new(BAR * 2))),
+            Some(0.5),
+            "the automation recorded in the log did not survive into the timeline"
+        );
+    }
+
+    #[test]
+    fn a_document_the_timeline_cannot_hold_is_reported_rather_than_clamped() {
+        // A project written by a future build, or a corrupted one, must not
+        // make this fail — a user unable to open their own project is worse
+        // than one told that a clip could not be shown — and must not silently
+        // move their work somewhere they did not put it.
+        use prv_project::{OperationPayload, PlacementId as Id, ProjectState, TrackRef};
+
+        let mut state = ProjectState::default();
+        state.apply(&OperationPayload::PlaceTrack {
+            placement: Id::new(1),
+            track: TrackRef::new(10),
+            position: Frames::ZERO,
+            length: Frames::new(BAR),
+            lane: MAX_LANES + 5,
+        });
+        state.apply(&OperationPayload::PlaceTrack {
+            placement: Id::new(2),
+            track: TrackRef::new(11),
+            position: Frames::ZERO,
+            length: Frames::new(BAR),
+            lane: 0,
+        });
+
+        let (timeline, skipped) = Timeline::from_project(&state);
+        assert_eq!(skipped, 1, "the out-of-range clip was not reported");
+        assert_eq!(timeline.clip_count(), 1);
+        assert_eq!(
+            timeline.clips().next().map(|clip| clip.lane()),
+            Some(0),
+            "a clip was moved to a lane the user did not choose"
+        );
     }
 
     #[test]

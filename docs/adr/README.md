@@ -57,3 +57,4 @@ Every record uses exactly this structure. No custom formats (Master Prompt #31,
 | [0004](0004-stem-separation.md) | Stem separation strategy | Accepted | 2026-11-01 |
 | [0005](0005-plugin-isolation.md) | Plugin isolation versus realtime latency | Accepted | 2027-02-01 |
 | [0006](0006-ai-decision-architecture.md) | AI decision architecture: deterministic planner, generative shell | Accepted | 2026-11-01 |
+| [0007](0007-the-project-crate-is-the-document-model.md) | The project crate is the document model | Accepted | 2027-02-01 |

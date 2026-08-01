@@ -34,7 +34,7 @@
 use prv_time::Frames;
 
 use crate::num::{narrow, signed_to_f64};
-use crate::parameter::ParameterAddress;
+use prv_project::{Interpolation, ParameterAddress};
 
 /// The largest number of points one lane may hold.
 ///
@@ -43,76 +43,6 @@ use crate::parameter::ParameterAddress;
 /// memory a project can consume and the depth of the binary search. Master
 /// Prompt #26 requires limits on anything a document can grow without bound.
 pub const MAX_POINTS: usize = 16_384;
-
-/// How the value moves from one point to the next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Interpolation {
-    /// The value jumps at the next point and is constant until then.
-    ///
-    /// What a switch, a preset change or a beat-synchronised effect needs. A
-    /// linear ramp on a parameter that only has discrete positions produces a
-    /// slur through values that mean nothing.
-    Hold,
-
-    /// A straight line.
-    Linear,
-
-    /// A smooth curve that starts and ends flat.
-    ///
-    /// A raised cosine, which is the shape a hand makes on a fader. Its
-    /// derivative is zero at both ends, so joining several of them produces a
-    /// curve with no corners — and a corner in a gain envelope is audible as a
-    /// click.
-    Smooth,
-
-    /// A curve that starts slowly and accelerates.
-    ///
-    /// What a filter sweep into a drop wants: most of the travel happens late,
-    /// so the change is felt as an arrival rather than a slide.
-    Accelerating,
-
-    /// A curve that starts quickly and settles.
-    Decelerating,
-}
-
-impl Interpolation {
-    /// Maps a fraction between two points onto a fraction of the value change.
-    ///
-    /// Every shape here satisfies `f(0) = 0` and `f(1) = 1` and stays within
-    /// those bounds in between. That is what guarantees no overshoot, and it is
-    /// checked by a test that walks every shape across its whole domain.
-    #[must_use]
-    pub fn apply(self, fraction: f64) -> f64 {
-        let t = fraction.clamp(0.0, 1.0);
-        match self {
-            // Hold reaches the next value only at the point itself.
-            Self::Hold => {
-                if t >= 1.0 {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            Self::Linear => t,
-            Self::Smooth => 0.5 * (1.0 - (core::f64::consts::PI * t).cos()),
-            Self::Accelerating => t * t,
-            Self::Decelerating => t.mul_add(-t, 2.0 * t),
-        }
-    }
-
-    /// A stable identifier, for storage and localisation.
-    #[must_use]
-    pub const fn key(self) -> &'static str {
-        match self {
-            Self::Hold => "interpolation.hold",
-            Self::Linear => "interpolation.linear",
-            Self::Smooth => "interpolation.smooth",
-            Self::Accelerating => "interpolation.accelerating",
-            Self::Decelerating => "interpolation.decelerating",
-        }
-    }
-}
 
 /// One point on an automation lane.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -401,7 +331,7 @@ mod tests {
     )]
 
     use super::*;
-    use crate::parameter::{ParameterKey, ParameterOwner};
+    use prv_project::{ParameterKey, ParameterOwner};
 
     fn lane() -> AutomationLane {
         AutomationLane::new(

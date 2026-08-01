@@ -1,6 +1,8 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
+use crate::parameter::{Interpolation, ParameterAddress};
+
 use prv_time::Frames;
 
 /// A device that can author operations.
@@ -259,7 +261,12 @@ impl fmt::Display for MarkerKind {
 /// meaning — ADR-0003 states that rule and this enum is where it is kept. The
 /// type is `non_exhaustive` so that adding a variant is not a breaking change
 /// for anything that matches on it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Eq` is deliberately not derived: an automation point carries an `f32`, and
+/// floating point has no total equality. `PartialEq` is enough for the
+/// comparisons the log performs, and claiming `Eq` would be a lie about the
+/// value's semantics — the same reasoning `prv-time::TimeError` records.
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum OperationPayload {
     /// Names or renames the project.
@@ -317,6 +324,44 @@ pub enum OperationPayload {
         /// The marker to remove.
         marker: MarkerId,
     },
+
+    /// Sets an automation point, replacing any point already at that position.
+    ///
+    /// One operation for both adding and moving a point's value, because from
+    /// the document's side they are the same act: the lane holds at most one
+    /// point per position. Splitting them would make replaying a log depend on
+    /// whether a point happened to exist yet, which is exactly the kind of
+    /// order dependence ADR-0003 exists to remove.
+    SetAutomationPoint {
+        /// Which parameter the lane drives.
+        address: ParameterAddress,
+        /// Where the point sits.
+        position: Frames,
+        /// The normalised value, from zero to one.
+        value: f32,
+        /// How the value approaches the next point.
+        interpolation: Interpolation,
+    },
+
+    /// Removes the automation point at a position.
+    RemoveAutomationPoint {
+        /// Which parameter the lane drives.
+        address: ParameterAddress,
+        /// Where the point sits.
+        position: Frames,
+    },
+
+    /// Turns a whole automation lane on or off.
+    ///
+    /// A disabled lane keeps its points. Master Prompt #9 forbids losing a
+    /// user's work by default, and "turn this off for a moment" is not a
+    /// request to delete it.
+    SetAutomationEnabled {
+        /// Which parameter the lane drives.
+        address: ParameterAddress,
+        /// Whether the lane applies.
+        enabled: bool,
+    },
 }
 
 impl OperationPayload {
@@ -336,6 +381,9 @@ impl OperationPayload {
             Self::AddMarker { marker, .. } | Self::RemoveMarker { marker } => {
                 Target::Marker(*marker)
             }
+            Self::SetAutomationPoint { address, .. }
+            | Self::RemoveAutomationPoint { address, .. }
+            | Self::SetAutomationEnabled { address, .. } => Target::Automation(address.clone()),
         }
     }
 
@@ -373,7 +421,12 @@ impl OperationPayload {
 }
 
 /// What an operation affects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// No longer `Copy`: a parameter address owns a boxed owner chain and, for a
+/// plugin parameter, a string. That is the cost of an address that survives
+/// storage, and it is paid here rather than by making every address a number
+/// that stops meaning the same thing when a chain is reordered.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Target {
     /// The project as a whole.
     Project,
@@ -381,6 +434,14 @@ pub enum Target {
     Placement(PlacementId),
     /// One marker.
     Marker(MarkerId),
+    /// One automation lane, named by the parameter it drives.
+    ///
+    /// The lane rather than the individual point. Two people moving different
+    /// points of the same sweep are editing the same thing, and reporting that
+    /// as a conflict per point would bury a real disagreement under a dozen
+    /// trivial ones — while reporting nothing would let one sweep silently
+    /// become a mixture of two.
+    Automation(ParameterAddress),
 }
 
 impl fmt::Display for Target {
@@ -389,12 +450,16 @@ impl fmt::Display for Target {
             Self::Project => f.write_str("the project"),
             Self::Placement(id) => write!(f, "{id}"),
             Self::Marker(id) => write!(f, "{id}"),
+            Self::Automation(address) => write!(f, "automation on {address}"),
         }
     }
 }
 
 /// One entry in the log.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Eq` follows the payload's lead and is not derived; see
+/// [`OperationPayload`] for why.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Operation {
     /// Unique identity.
     pub id: OperationId,

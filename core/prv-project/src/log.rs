@@ -145,7 +145,7 @@ impl fmt::Display for MergeReport {
 /// A position is a count of operations from the start. Position zero is the
 /// empty project; position `len()` is the present. Named versions and branches
 /// are both positions, which is why they cost almost nothing.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct OperationLog {
     operations: Vec<Operation>,
     labels: BTreeMap<String, usize>,

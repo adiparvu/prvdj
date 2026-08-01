@@ -1,4 +1,22 @@
-//! The project, as an append-only log of operations.
+//! The project document: the log, the fold, and everything either one holds.
+//!
+//! # What belongs here
+//!
+//! ADR-0007 draws the boundary by a single question: **does a project file
+//! contain it?** If so it is defined here; if it only exists at runtime it
+//! belongs to whichever crate computes it.
+//!
+//! That is why [`parameter::ParameterAddress`] lives in the crate that looks
+//! like "the log". An address is written into the log, synchronised to other
+//! devices, and must mean the same thing when the project is reopened next
+//! year — so it is document vocabulary, exactly as a marker kind or a track
+//! reference is. Its counterpart, the *descriptor* saying what values that
+//! parameter accepts, is declared at load time and never stored, so it lives
+//! with the timeline.
+//!
+//! The rule is mechanical on purpose. Without it the vocabulary drifts toward
+//! whichever crate happened to need it first, and the log ends up depending on
+//! the timeline while the timeline depends on the log.
 //!
 //! # Why a log rather than a document
 //!
@@ -42,11 +60,16 @@
 
 mod log;
 mod operation;
+pub mod parameter;
 mod state;
 
 pub use log::{Conflict, ConflictKind, MergeReport, OperationLog, ProjectError};
 pub use operation::{
-    DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload, PlacementId,
+    DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload, PlacementId, Target,
     TrackRef, VersionVector,
+};
+pub use parameter::{
+    Interpolation, ParameterAddress, ParameterError, ParameterKey, ParameterOwner,
+    PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
 };
 pub use state::{Marker, Placement, ProjectState};
