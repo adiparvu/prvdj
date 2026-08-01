@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 12._
+_Last updated: Sprint 13._
 
 ## Sprint 0 — Foundation
 
@@ -154,6 +154,14 @@ _Last updated: Sprint 12._
 | Clips carry their media reference | Completed | Verified | Makes ADR-0003's "the project refers to media" structural |
 | Edits emit operations | Completed | Verified | The cache and the fold agree, tested end to end |
 | Deleting a clip records its automation going with it | Completed | Verified | Undoing a deletion restores both |
+
+## Sprint 13 — A trimmed front survives a reload
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `SetPlacementSource` operation | Completed | Verified | A new operation rather than a redefined one, as ADR-0003 requires |
+| Source offset in the fold, with an inverse | Completed | Verified | A log that predates it means zero, which is what it meant when written |
+| Trim and split emit it | Completed | Verified | The audio under a clip no longer slides on reload |
 
 ## Not started
 

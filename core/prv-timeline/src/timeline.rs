@@ -302,6 +302,14 @@ fn move_to(clip: Clip) -> OperationPayload {
     }
 }
 
+/// The operation that records where a clip begins in its source.
+fn set_source(clip: Clip) -> OperationPayload {
+    OperationPayload::SetPlacementSource {
+        placement: clip.id,
+        source_offset: clip.source_offset,
+    }
+}
+
 /// The operation that records a clip's new length.
 fn trim(clip: Clip) -> OperationPayload {
     OperationPayload::TrimPlacement {
@@ -540,7 +548,7 @@ impl Timeline {
         // consistent at every step.
         Ok(Edit {
             clips: vec![trimmed],
-            operations: vec![move_to(trimmed), trim(trimmed)],
+            operations: vec![move_to(trimmed), trim(trimmed), set_source(trimmed)],
         })
     }
 
@@ -594,7 +602,7 @@ impl Timeline {
         self.clips.insert(second.id.get(), second);
         Ok(Edit {
             clips: vec![first, second],
-            operations: vec![trim(first), place(second)],
+            operations: vec![trim(first), place(second), set_source(second)],
         })
     }
 
@@ -709,7 +717,8 @@ impl Timeline {
                 placement.lane,
                 placement.position,
                 placement.length,
-            );
+            )
+            .with_source_offset(placement.source_offset);
             if clip.lane >= MAX_LANES
                 || clip.length.get() <= 0
                 || timeline.clips.len() >= MAX_CLIPS
@@ -1354,7 +1363,7 @@ mod tests {
             .expect("inside the clip");
 
         assert_eq!(split.clips().len(), 2);
-        assert_eq!(split.operations().len(), 2);
+        assert_eq!(split.operations().len(), 3);
 
         let mut state = ProjectState::default();
         for operation in timeline

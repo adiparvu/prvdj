@@ -17,6 +17,11 @@ pub struct Placement {
     pub length: Frames,
     /// Which lane it sits on.
     pub lane: u32,
+    /// How far into the source it begins.
+    ///
+    /// Zero for a placement written before the offset was recordable, which is
+    /// what such a placement meant: it began at the start of its media.
+    pub source_offset: Frames,
 }
 
 impl Placement {
@@ -173,6 +178,7 @@ impl ProjectState {
                         position: *position,
                         length: *length,
                         lane: *lane,
+                        source_offset: Frames::ZERO,
                     },
                 );
             }
@@ -212,6 +218,39 @@ impl ProjectState {
             OperationPayload::RemoveMarker { marker } => {
                 self.markers.remove(marker);
             }
+            OperationPayload::SetAutomationPoint { .. }
+            | OperationPayload::RemoveAutomationPoint { .. }
+            | OperationPayload::SetAutomationEnabled { .. } => self.apply_automation(payload),
+            OperationPayload::SetPlacementSource {
+                placement,
+                source_offset,
+            } => {
+                if let Some(existing) = self.placements.get_mut(placement) {
+                    existing.source_offset = *source_offset;
+                }
+            }
+            OperationPayload::SetTempo { position, tempo } => {
+                self.tempo_changes.insert(position.get(), *tempo);
+            }
+            OperationPayload::RemoveTempo { position } => {
+                self.tempo_changes.remove(&position.get());
+            }
+        }
+        // No wildcard arm. `non_exhaustive` binds other crates, not this one,
+        // so within the crate that defines the payload the compiler still
+        // demands every variant — which is exactly the guarantee wanted here. A
+        // variant added without a fold arm would be an edit that silently
+        // vanishes when the project is reopened, and this makes that a build
+        // failure rather than a support ticket.
+    }
+
+    /// Applies an automation operation.
+    ///
+    /// Split out of [`ProjectState::apply`] to keep that function readable
+    /// rather than because automation is separate in principle; it obeys
+    /// exactly the same rules as everything else in the fold.
+    fn apply_automation(&mut self, payload: &OperationPayload) {
+        match payload {
             OperationPayload::SetAutomationPoint {
                 address,
                 position,
@@ -251,19 +290,10 @@ impl ProjectState {
             OperationPayload::SetAutomationEnabled { address, enabled } => {
                 self.automation.entry(address.clone()).or_default().enabled = *enabled;
             }
-            OperationPayload::SetTempo { position, tempo } => {
-                self.tempo_changes.insert(position.get(), *tempo);
-            }
-            OperationPayload::RemoveTempo { position } => {
-                self.tempo_changes.remove(&position.get());
-            }
+            // The caller matched the automation variants before delegating, so
+            // nothing else reaches here.
+            _ => {}
         }
-        // No wildcard arm. `non_exhaustive` binds other crates, not this one,
-        // so within the crate that defines the payload the compiler still
-        // demands every variant — which is exactly the guarantee wanted here. A
-        // variant added without a fold arm would be an edit that silently
-        // vanishes when the project is reopened, and this makes that a build
-        // failure rather than a support ticket.
     }
 
     /// The operation that would undo `payload`, given this state as it was
@@ -353,6 +383,14 @@ impl ProjectState {
             OperationPayload::SetAutomationPoint { .. }
             | OperationPayload::RemoveAutomationPoint { .. }
             | OperationPayload::SetAutomationEnabled { .. } => self.inverse_of_automation(payload),
+
+            OperationPayload::SetPlacementSource { placement, .. } => {
+                let existing = self.placements.get(placement)?;
+                Some(OperationPayload::SetPlacementSource {
+                    placement: *placement,
+                    source_offset: existing.source_offset,
+                })
+            }
 
             // A tempo change undoes to whatever was at that position, or to its
             // absence. Both are operations, so undo stays an append.
@@ -597,6 +635,57 @@ mod tests {
                 lane: 2
             })
         );
+    }
+
+    #[test]
+    fn a_source_offset_is_recorded_without_redefining_an_older_operation() {
+        // ADR-0003 forbids redefining a variant: a project written by an
+        // earlier build must keep its meaning. A log that predates this
+        // operation means an offset of zero, which is exactly what it meant
+        // when it was written — so the new capability is a new operation.
+        let mut state = ProjectState::default();
+        state.apply(&place(1, 0, 1000, 0));
+        assert_eq!(
+            state
+                .placements
+                .get(&PlacementId::new(1))
+                .map(|p| p.source_offset),
+            Some(Frames::ZERO),
+            "a placement written without an offset should begin at its start"
+        );
+
+        let set = OperationPayload::SetPlacementSource {
+            placement: PlacementId::new(1),
+            source_offset: Frames::new(400),
+        };
+        let undo = state.inverse_of(&set).expect("there is an inverse");
+        state.apply(&set);
+        assert_eq!(
+            state
+                .placements
+                .get(&PlacementId::new(1))
+                .map(|p| p.source_offset),
+            Some(Frames::new(400))
+        );
+
+        state.apply(&undo);
+        assert_eq!(
+            state
+                .placements
+                .get(&PlacementId::new(1))
+                .map(|p| p.source_offset),
+            Some(Frames::ZERO),
+            "undoing a source change did not restore the earlier offset"
+        );
+
+        // Setting the source of something that is not there is not undoable,
+        // and says so rather than inventing an operation.
+        assert!(state
+            .inverse_of(&OperationPayload::SetPlacementSource {
+                placement: PlacementId::new(99),
+                source_offset: Frames::new(5),
+            })
+            .is_none());
     }
 
     #[test]

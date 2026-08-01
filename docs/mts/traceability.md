@@ -162,6 +162,7 @@ did not have would be worse than no row at all.
 | Transitions land on the analysed structure | MP#3B, MP#20 | `prv-mix::render::transition_start` | `a_transition_lands_on_the_outgoing_tracks_exit_point`, `an_exit_point_too_late_to_use_is_clamped_rather_than_trusted` | **Verified** |
 | A hand edit and a generated edit are the same object | MP#3B, ADR-0003 | `prv-timeline::Edit` | `an_edit_applied_to_the_log_rebuilds_the_same_timeline`, `a_split_records_both_halves` | **Verified** |
 | Deleting a clip does not silently lose its automation | MP#9 | `prv-timeline::Timeline::remove` | `removing_a_clip_records_its_automation_going_too` | **Verified** |
+| A trimmed clip does not slide on reload | MP#3C, MP#21 | `prv-project::OperationPayload::SetPlacementSource` | `a_source_offset_is_recorded_without_redefining_an_older_operation`, `an_edit_applied_to_the_log_rebuilds_the_same_timeline` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

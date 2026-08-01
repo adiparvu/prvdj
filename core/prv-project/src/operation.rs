@@ -351,6 +351,24 @@ pub enum OperationPayload {
         position: Frames,
     },
 
+    /// Sets how far into its source a placement begins.
+    ///
+    /// A separate operation rather than a field on [`OperationPayload::PlaceTrack`],
+    /// because ADR-0003 forbids redefining an existing variant: a project
+    /// written by an earlier build must keep its meaning, and a log that
+    /// predates this operation means an offset of zero — which is exactly what
+    /// it meant when it was written.
+    ///
+    /// This is what makes trimming the front of a clip survive a reload. Without
+    /// it the clip's boundary moves and the audio underneath slides back to the
+    /// beginning, which is the same defect the timeline works to avoid live.
+    SetPlacementSource {
+        /// The placement.
+        placement: PlacementId,
+        /// How far into the source it begins.
+        source_offset: Frames,
+    },
+
     /// Sets the tempo the set runs at from a position onward.
     ///
     /// A DJ set has one tempo at a time and changes it at transitions, which is
@@ -396,7 +414,8 @@ impl OperationPayload {
             Self::PlaceTrack { placement, .. }
             | Self::MovePlacement { placement, .. }
             | Self::TrimPlacement { placement, .. }
-            | Self::RemovePlacement { placement } => Target::Placement(*placement),
+            | Self::RemovePlacement { placement }
+            | Self::SetPlacementSource { placement, .. } => Target::Placement(*placement),
             Self::AddMarker { marker, .. } | Self::RemoveMarker { marker } => {
                 Target::Marker(*marker)
             }
