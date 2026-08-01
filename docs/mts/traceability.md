@@ -76,9 +76,18 @@ did not have would be worse than no row at all.
 | Harmonic compatibility and Camelot | MP#3A, MP#20 | `prv-harmony` | all 24 published wheel positions reproduced against an external chart | **Verified** |
 | Explanations derived from evidence | MP#3B, ADR-0006 | `prv-harmony::KeyRelation` | classification separate from weighting; `relations_read_as_plain_language` | **Verified** |
 | The planner never strands a track | MP#3B | `prv-harmony` | `every_key_has_at_least_six_safe_destinations` | **Verified** |
-| Confidence calibrated centrally | MP#25 | ADR-0006 | — | **Decided** |
+| Confidence calibrated centrally | MP#25 | `prv-analysis::Confidence` | `the_scale_is_continuous_and_monotonic`, `every_label_is_reachable`, `actionability_agrees_with_the_label` | **Verified** |
+| A derived result is never more certain than its inputs | MP#25, ADR-0006 | `prv-analysis::Confidence::and_then` | `a_chain_is_no_stronger_than_its_weakest_stage` | **Verified** |
 | Works with cloud AI disabled | MP#26 | ADR-0006 | — | **Decided** |
-| Tempo, key, structure, energy detection | MP#20 | — | — | Not started |
+| Tempo detection | MP#20 | `prv-analysis::tempo` | `a_click_track_is_measured_to_within_half_a_beat_per_minute`, `a_tempo_that_is_not_a_whole_number_of_frames_is_not_read_as_half_time` | **Verified** |
+| Half-time and double-time offered, not hidden | MP#20 | `prv-analysis::tempo::OctaveRelation` | `the_half_time_reading_is_offered_rather_than_hidden`, `a_fast_track_is_reported_in_the_range_a_dj_expects` | **Verified** |
+| Beat positions accurate enough for a professional grid | MP#18, MP#20 | `prv-analysis::beats` | `beats_land_on_the_clicks`, `the_grid_does_not_drift_over_a_long_track`, `the_fitted_tempo_is_accurate_to_a_hundredth_of_a_beat_per_minute` | **Verified** |
+| The grid survives a passage with no onsets | MP#20 | `prv-analysis::beats` | `the_tracker_coasts_through_a_gap_and_recovers` | **Verified** |
+| Downbeat detection | MP#20 | `prv-analysis::beats::downbeat_phase` | `the_downbeat_follows_the_low_end_rather_than_the_onsets` | **Verified** |
+| Onsets found where an envelope detector would fail | MP#20 | `prv-analysis::NoveltyCurve` | `the_curve_survives_a_twenty_decibel_level_change`, `a_sustained_tone_has_no_onsets_in_its_interior` | **Verified** |
+| Analysis produces the same result on every platform | ADR-0006 | `prv-analysis::fft` | transform written in-crate, checked against the direct sum; `estimation_is_reproducible`, `tracking_is_reproducible` | **Verified** |
+| Analysis hands over to exact integer time | MP#18, MS#002 | `prv-analysis::BeatEstimate::to_beat_grid` | `a_beat_grid_is_anchored_on_the_first_downbeat` | **Verified** |
+| Key, structure and loudness detection | MP#20 | — | — | Not started |
 | Transition scoring at import | MP#20 | — | — | Not started |
 | Mix planner, versions A/B/C | MP#3B | — | — | Not started |
 | Learning profile | MP#5 | — | — | Not started |

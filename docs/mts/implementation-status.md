@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 4._
+_Last updated: Sprint 5._
 
 ## Sprint 0 — Foundation
 
@@ -72,6 +72,19 @@ _Last updated: Sprint 4._
 | `prv-library` composable filters and sorting | Completed | Verified | Harmonic filtering uses the planner's own model |
 | `prv-library` duplicate detection | Completed | Verified | Four signals, ordered by confidence, never acted on |
 | `prv-library` collections | Completed | Verified | Overlapping, and they survive removal |
+
+## Sprint 5 — Audio analysis: rhythm
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-analysis` discrete Fourier transform | Completed | Verified | Written rather than depended upon; checked against the direct sum |
+| `prv-analysis` analysis windows | Completed | Verified | Two shapes, each chosen by requirement; sidelobe rejection measured |
+| `prv-analysis` streaming short-time transform | Completed | Verified | Centred, never materialised; a track costs kilobytes not megabytes |
+| `prv-analysis` spectral-flux novelty curve | Completed | Verified | Survives a 20 dB level change; sustained material produces no events |
+| `prv-analysis` tempo estimation | Completed | Verified | Autocorrelation through the transform; octave alternatives always exposed |
+| `prv-analysis` beat and downbeat tracking | Completed | Verified | Dynamic programme; coasts through a breakdown and recovers |
+| `prv-analysis` fitted beat grid | Completed | Verified | Tempo accurate to a hundredth of a beat per minute over 192 beats |
+| Central confidence scale | Completed | Verified | One mapping to Master Prompt #25's five labels, used everywhere |
 
 ## Not started
 

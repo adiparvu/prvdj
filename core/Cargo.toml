@@ -9,6 +9,7 @@ members = [
     "prv-waveform",
     "prv-project",
     "prv-library",
+    "prv-analysis",
 ]
 
 [workspace.package]

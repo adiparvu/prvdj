@@ -145,6 +145,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-analysis"
+version = "0.1.0"
+dependencies = [
+ "prv-harmony",
+ "prv-time",
+]
+
+[[package]]
 name = "prv-dsp"
 version = "0.1.0"
 dependencies = [
