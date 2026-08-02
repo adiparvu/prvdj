@@ -64,6 +64,7 @@
 //! | [`engine`] | What does a host hold, and what can it ask? |
 //! | [`planning`] | How does a host get a set planned? |
 //! | [`analysis`] | What is this track: tempo, key, loudness, shape? |
+//! | [`policy`] | May this leave the device, and is this feature available? |
 //! | [`exports`] | The functions themselves. |
 //!
 //! # The header is generated
@@ -89,11 +90,13 @@ pub mod exports;
 mod guard;
 pub mod mapping;
 pub mod planning;
+pub mod policy;
 pub mod status;
 
 pub use analysis::Analysis;
 pub use engine::{Engine, ReadAudio, MAX_BLOCK_FRAMES, MAX_CHANNELS};
 pub use planning::Planner;
+pub use policy::Policy;
 pub use status::Status;
 
 #[cfg(test)]

@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 2
+#define PRV_ABI_MINOR 3
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -85,6 +85,55 @@ typedef enum PrvTransportEvent {
     PRV_EVENT_FORCE_SIGNED = -1,
 } PrvTransportEvent;
 
+/* What a user may agree to. Nothing is agreed to by default. */
+typedef enum PrvPurpose {
+    PRV_PURPOSE_CLOUD_ANALYSIS = 0,
+    PRV_PURPOSE_CLOUD_LANGUAGE = 1,
+    PRV_PURPOSE_CLOUD_STEM_SEPARATION = 2,
+    PRV_PURPOSE_PROJECT_SYNC = 3,
+    PRV_PURPOSE_COLLABORATION = 4,
+    PRV_PURPOSE_CRASH_DIAGNOSTICS = 5,
+    PRV_PURPOSE_USAGE_ANALYTICS = 6,
+    PRV_PURPOSE_MODEL_TRAINING = 7,
+    PRV_PURPOSE_PERSONALISED_SUGGESTIONS = 8,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_PURPOSE_FORCE_SIGNED = -1,
+} PrvPurpose;
+
+/* Licence tiers, cheapest first. */
+typedef enum PrvTier {
+    PRV_TIER_FREE = 0,
+    PRV_TIER_STANDARD = 1,
+    PRV_TIER_PROFESSIONAL = 2,
+    PRV_TIER_STUDIO = 3,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_TIER_FORCE_SIGNED = -1,
+} PrvTier;
+
+/* Features a licence may gate. The essential ones are available at every
+         * tier, which Master Prompt #29 requires and prv_policy_feature_is_essential
+         * lets a host check. */
+typedef enum PrvFeature {
+    PRV_FEATURE_PLAYBACK = 0,
+    PRV_FEATURE_LIBRARY = 1,
+    PRV_FEATURE_PROJECT_EDITING = 2,
+    PRV_FEATURE_EXPORT = 3,
+    PRV_FEATURE_ANALYSIS = 4,
+    PRV_FEATURE_AI_PLANNING = 5,
+    PRV_FEATURE_STEM_SEPARATION = 6,
+    PRV_FEATURE_CLOUD_AI = 7,
+    PRV_FEATURE_CLOUD_SYNC = 8,
+    PRV_FEATURE_COLLABORATION = 9,
+    PRV_FEATURE_PLUGINS = 10,
+    PRV_FEATURE_HIGH_RESOLUTION_EXPORT = 11,
+    PRV_FEATURE_LIVE_PERFORMANCE = 12,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_FEATURE_FORCE_SIGNED = -1,
+} PrvFeature;
+
 /* The shape of a set's energy over its length. */
 typedef enum PrvEnergyShape {
     PRV_ENERGY_RISING = 0,
@@ -98,9 +147,9 @@ typedef enum PrvEnergyShape {
 } PrvEnergyShape;
 
 /* How far the planner may depart from established practice.
-*
-* This never relaxes a hard constraint. A clashing key is not generated at
-* any setting; creativity widens the soft limits only. */
+         *
+         * This never relaxes a hard constraint. A clashing key is not generated at
+         * any setting; creativity widens the soft limits only. */
 typedef enum PrvCreativity {
     PRV_CREATIVITY_CONSERVATIVE = 0,
     PRV_CREATIVITY_BALANCED = 1,
@@ -119,6 +168,9 @@ typedef struct PrvPlanner PrvPlanner;
 
 /* What the analysis found out about one track. */
 typedef struct PrvAnalysis PrvAnalysis;
+
+/* What the user agreed to, and what their licence allows. */
+typedef struct PrvPolicy PrvPolicy;
 
 /*
  * Reads audio for one track.
@@ -432,6 +484,97 @@ int32_t prv_analysis_transition_point_count(const PrvAnalysis *analysis,
  */
 int32_t prv_analysis_transition_point(const PrvAnalysis *analysis, uint64_t index,
                                       int64_t *out_position, float *out_energy);
+
+/*
+ * Creates a policy: nothing agreed to, free tier.
+ *
+ * Both are the safe end of their range. A host that never configures this
+ * can still run the whole product offline.
+ */
+int32_t prv_policy_create(PrvPolicy **out_policy);
+
+/*
+ * Destroys a policy. NULL is accepted and does nothing.
+ */
+void prv_policy_destroy(PrvPolicy *policy);
+
+/*
+ * Records that the user agreed to a purpose.
+ *
+ * `ordinal` identifies *which* agreement was given — a version of the
+ * wording, or a sequence. It is what makes this a consent record rather
+ * than a boolean.
+ */
+int32_t prv_policy_grant(PrvPolicy *policy, int32_t purpose, uint64_t ordinal);
+
+/*
+ * Records that the user withdrew a purpose.
+ */
+int32_t prv_policy_withdraw(PrvPolicy *policy, int32_t purpose);
+
+/*
+ * Withdraws every agreement at once.
+ *
+ * One call rather than a loop in the host, because a loop in the host is
+ * one that can be interrupted half way.
+ */
+int32_t prv_policy_withdraw_all(PrvPolicy *policy);
+
+/*
+ * Whether a purpose is currently agreed to.
+ */
+int32_t prv_policy_allows(const PrvPolicy *policy, int32_t purpose, int32_t *out_allowed);
+
+/*
+ * Whether anything at all currently leaves the device.
+ *
+ * The single question a privacy screen leads with. Composed in the core
+ * from every purpose that transmits, so a purpose added later is included
+ * without any host being changed.
+ */
+int32_t prv_policy_anything_leaves_the_device(const PrvPolicy *policy,
+                                              int32_t *out_leaves);
+
+/*
+ * Whether a purpose sends the user's own material, or a fact about it.
+ *
+ * A different question from whether anything leaves the device: a crash
+ * report leaves and carries no music. A consent screen needs both, and one
+ * built on either alone misleads in one direction or the other.
+ */
+int32_t prv_purpose_sends_content(int32_t purpose, int32_t *out_sends);
+
+/*
+ * Sets the licence tier.
+ */
+int32_t prv_policy_set_tier(PrvPolicy *policy, int32_t tier);
+
+/*
+ * Marks the licence expired.
+ *
+ * Not a lock-out. Everything essential survives.
+ */
+int32_t prv_policy_expire(PrvPolicy *policy);
+
+/*
+ * Reads the current licence tier.
+ */
+int32_t prv_policy_tier(const PrvPolicy *policy, int32_t *out_tier);
+
+/*
+ * Whether a feature is available under the current licence.
+ */
+int32_t prv_policy_feature_allowed(const PrvPolicy *policy, int32_t feature,
+                                   int32_t *out_allowed);
+
+/*
+ * Whether a feature is essential, and so present at every tier.
+ *
+ * An essential feature that is somehow unavailable is a defect, not an
+ * upsell, and a host should say so differently.
+ */
+int32_t prv_policy_feature_is_essential(const PrvPolicy *policy, int32_t feature,
+                                        int32_t *out_essential);
 
 #ifdef __cplusplus
 }

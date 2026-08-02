@@ -46,6 +46,7 @@ use std::process::ExitCode;
 
 use prv_ffi::mapping::{PLAYBACK_STATES, TRANSPORT_EVENTS};
 use prv_ffi::planning::{CREATIVITY_SETTINGS, ENERGY_SHAPES};
+use prv_ffi::policy::{purpose_code, tier_code};
 use prv_ffi::{abi, Status};
 
 /// One exported function, as C sees it.
@@ -173,6 +174,29 @@ fn declarations() -> Vec<Declaration> {
         prv_ffi::exports::prv_analysis_transition_point_count;
     let _: unsafe extern "C" fn(*const prv_ffi::Analysis, u64, *mut i64, *mut f32) -> i32 =
         prv_ffi::exports::prv_analysis_transition_point;
+    let _: unsafe extern "C" fn(*mut *mut prv_ffi::Policy) -> i32 =
+        prv_ffi::exports::prv_policy_create;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy) = prv_ffi::exports::prv_policy_destroy;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy, i32, u64) -> i32 =
+        prv_ffi::exports::prv_policy_grant;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy, i32) -> i32 =
+        prv_ffi::exports::prv_policy_withdraw;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy) -> i32 =
+        prv_ffi::exports::prv_policy_withdraw_all;
+    let _: unsafe extern "C" fn(*const prv_ffi::Policy, i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_policy_allows;
+    let _: unsafe extern "C" fn(*const prv_ffi::Policy, *mut i32) -> i32 =
+        prv_ffi::exports::prv_policy_anything_leaves_the_device;
+    let _: unsafe extern "C" fn(i32, *mut i32) -> i32 = prv_ffi::exports::prv_purpose_sends_content;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy, i32) -> i32 =
+        prv_ffi::exports::prv_policy_set_tier;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Policy) -> i32 = prv_ffi::exports::prv_policy_expire;
+    let _: unsafe extern "C" fn(*const prv_ffi::Policy, *mut i32) -> i32 =
+        prv_ffi::exports::prv_policy_tier;
+    let _: unsafe extern "C" fn(*const prv_ffi::Policy, i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_policy_feature_allowed;
+    let _: unsafe extern "C" fn(*const prv_ffi::Policy, i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_policy_feature_is_essential;
 
     vec![
         Declaration {
@@ -480,6 +504,100 @@ fn declarations() -> Vec<Declaration> {
                 "position rather than needing a second call.",
             ],
         },
+        Declaration {
+            signature: "int32_t prv_policy_create(PrvPolicy **out_policy)",
+            doc: &[
+                "Creates a policy: nothing agreed to, free tier.",
+                "",
+                "Both are the safe end of their range. A host that never configures this",
+                "can still run the whole product offline.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_policy_destroy(PrvPolicy *policy)",
+            doc: &["Destroys a policy. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_grant(PrvPolicy *policy, int32_t purpose, \
+                        uint64_t ordinal)",
+            doc: &[
+                "Records that the user agreed to a purpose.",
+                "",
+                "`ordinal` identifies *which* agreement was given — a version of the",
+                "wording, or a sequence. It is what makes this a consent record rather",
+                "than a boolean.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_withdraw(PrvPolicy *policy, int32_t purpose)",
+            doc: &["Records that the user withdrew a purpose."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_withdraw_all(PrvPolicy *policy)",
+            doc: &[
+                "Withdraws every agreement at once.",
+                "",
+                "One call rather than a loop in the host, because a loop in the host is",
+                "one that can be interrupted half way.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_allows(const PrvPolicy *policy, int32_t purpose, \
+                        int32_t *out_allowed)",
+            doc: &["Whether a purpose is currently agreed to."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_anything_leaves_the_device(const PrvPolicy *policy, \
+                        int32_t *out_leaves)",
+            doc: &[
+                "Whether anything at all currently leaves the device.",
+                "",
+                "The single question a privacy screen leads with. Composed in the core",
+                "from every purpose that transmits, so a purpose added later is included",
+                "without any host being changed.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_purpose_sends_content(int32_t purpose, int32_t *out_sends)",
+            doc: &[
+                "Whether a purpose sends the user's own material, or a fact about it.",
+                "",
+                "A different question from whether anything leaves the device: a crash",
+                "report leaves and carries no music. A consent screen needs both, and one",
+                "built on either alone misleads in one direction or the other.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_set_tier(PrvPolicy *policy, int32_t tier)",
+            doc: &["Sets the licence tier."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_expire(PrvPolicy *policy)",
+            doc: &[
+                "Marks the licence expired.",
+                "",
+                "Not a lock-out. Everything essential survives.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_tier(const PrvPolicy *policy, int32_t *out_tier)",
+            doc: &["Reads the current licence tier."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_feature_allowed(const PrvPolicy *policy, \
+                        int32_t feature, int32_t *out_allowed)",
+            doc: &["Whether a feature is available under the current licence."],
+        },
+        Declaration {
+            signature: "int32_t prv_policy_feature_is_essential(const PrvPolicy *policy, \
+                        int32_t feature, int32_t *out_essential)",
+            doc: &[
+                "Whether a feature is essential, and so present at every tier.",
+                "",
+                "An essential feature that is somehow unavailable is a defect, not an",
+                "upsell, and a host should say so differently.",
+            ],
+        },
     ]
 }
 
@@ -497,6 +615,27 @@ fn signed_sentinel(name: &str) -> String {
         \x20      int32_t every function here takes. Never returned, never compared. */\n\
         \x20   {name} = -1,\n"
     )
+}
+
+/// Emits one C enum: a comment, the members in code order, and a sentinel.
+///
+/// Six enums reach the header and every one of them had the same eleven lines
+/// written out. Extracting it is not tidying — a sixth copy is where the
+/// sentinel gets forgotten, and a signed enum that quietly became unsigned is a
+/// Swift build failure a hundred lines from anything that looks related.
+fn emit_enum(
+    out: &mut String,
+    comment: &str,
+    type_name: &str,
+    sentinel: &str,
+    members: impl Iterator<Item = (String, i32)>,
+) {
+    let _ = writeln!(out, "{comment}\ntypedef enum {type_name} {{");
+    for (name, code) in members {
+        let _ = writeln!(out, "    {name} = {code},");
+    }
+    out.push_str(&signed_sentinel(sentinel));
+    let _ = writeln!(out, "}} {type_name};\n");
 }
 
 /// Wraps a signature across lines the way a reader of C expects.
@@ -548,6 +687,167 @@ fn write_signature(out: &mut String, signature: &str) {
     out.push_str(");\n");
 }
 
+/// Emits every type the header declares: the enums, the opaque handles and the
+/// callback.
+///
+/// Split from [`header`] because the two halves answer different questions — one
+/// is "what can a host name", the other is "what can a host do" — and because a
+/// single function that did both had grown past the point where anybody would
+/// read it to the end.
+fn emit_types(out: &mut String) {
+    emit_enum(
+        out,
+        "/* The result of a call. Zero is success, and it is the only success. */",
+        "PrvStatus",
+        "PRV_STATUS_FORCE_SIGNED",
+        Status::ALL
+            .iter()
+            .map(|status| (status.c_name().to_owned(), status.code())),
+    );
+
+    emit_enum(
+        out,
+        "/* What the transport is doing. */",
+        "PrvPlaybackState",
+        "PRV_PLAYBACK_FORCE_SIGNED",
+        PLAYBACK_STATES
+            .iter()
+            .map(|(state, name)| ((*name).to_owned(), prv_ffi::mapping::playback_code(*state))),
+    );
+
+    emit_enum(
+        out,
+        "/* What can happen to the transport. */",
+        "PrvTransportEvent",
+        "PRV_EVENT_FORCE_SIGNED",
+        TRANSPORT_EVENTS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_domain_enums(out);
+}
+
+/// Emits the enums that name things in the product rather than in the boundary.
+///
+/// Split from [`emit_types`] along the line that matters: everything there is
+/// about *calling* — statuses, handles, the callback — and everything here is
+/// about the music and the licence. A reader looking for one is not made to
+/// scroll through the other.
+fn emit_domain_enums(out: &mut String) {
+    emit_enum(
+        out,
+        "/* What a user may agree to. Nothing is agreed to by default. */",
+        "PrvPurpose",
+        "PRV_PURPOSE_FORCE_SIGNED",
+        prv_security::Purpose::ALL.iter().map(|purpose| {
+            (
+                format!(
+                    "PRV_PURPOSE_{}",
+                    purpose.key().trim_start_matches("purpose.").to_uppercase()
+                ),
+                purpose_code(*purpose),
+            )
+        }),
+    );
+
+    emit_enum(
+        out,
+        "/* Licence tiers, cheapest first. */",
+        "PrvTier",
+        "PRV_TIER_FORCE_SIGNED",
+        prv_entitlements::Tier::ALL.iter().map(|tier| {
+            (
+                format!(
+                    "PRV_TIER_{}",
+                    tier.key().trim_start_matches("tier.").to_uppercase()
+                ),
+                tier_code(*tier),
+            )
+        }),
+    );
+
+    emit_enum(
+        out,
+        "/* Features a licence may gate. The essential ones are available at every\n         * tier, which Master Prompt #29 requires and prv_policy_feature_is_essential\n         * lets a host check. */",
+        "PrvFeature",
+        "PRV_FEATURE_FORCE_SIGNED",
+        prv_entitlements::Feature::ALL.iter().enumerate().map(|(index, feature)| {
+            (
+                format!(
+                    "PRV_FEATURE_{}",
+                    feature.key().trim_start_matches("feature.").to_uppercase()
+                ),
+                i32::try_from(index).unwrap_or(0),
+            )
+        }),
+    );
+
+    emit_enum(
+        out,
+        "/* The shape of a set's energy over its length. */",
+        "PrvEnergyShape",
+        "PRV_ENERGY_FORCE_SIGNED",
+        ENERGY_SHAPES
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* How far the planner may depart from established practice.\n         *\n         * This never relaxes a hard constraint. A clashing key is not generated at\n         * any setting; creativity widens the soft limits only. */",
+        "PrvCreativity",
+        "PRV_CREATIVITY_FORCE_SIGNED",
+        CREATIVITY_SETTINGS.iter().enumerate().map(|(index, (_, name))| {
+            ((*name).to_owned(), i32::try_from(index).unwrap_or(0))
+        }),
+    );
+
+    out.push_str(
+        r"/* An engine. Opaque: the host never sees inside it, which is what lets the
+ * layout change without touching this header. */
+typedef struct PrvEngine PrvEngine;
+
+/* A planner: a library of candidates, and the sets planned from it. */
+typedef struct PrvPlanner PrvPlanner;
+
+/* What the analysis found out about one track. */
+typedef struct PrvAnalysis PrvAnalysis;
+
+/* What the user agreed to, and what their licence allows. */
+typedef struct PrvPolicy PrvPolicy;
+
+",
+    );
+
+    out.push_str(
+        r"/*
+ * Reads audio for one track.
+ *
+ * Called from the audio thread, so it obeys the same contract: no allocation, no
+ * locking, no blocking file access. A host that cannot satisfy a read from
+ * memory it already holds returns fewer frames than asked for, and the renderer
+ * records the shortfall rather than stalling.
+ *
+ * `planar` points at channels * capacity floats, channel-major. Write `frames`
+ * frames beginning at `destination` within each channel and return how many were
+ * actually written. Claiming more than was asked for is not believed.
+ */
+typedef uint32_t (*PrvReadAudio)(void *user_data,
+                                 uint64_t track,
+                                 int64_t source_offset,
+                                 float *planar,
+                                 uint32_t channels,
+                                 uint32_t capacity,
+                                 uint32_t destination,
+                                 uint32_t frames);
+
+",
+    );
+}
+
 /// Builds the whole header.
 fn header() -> String {
     let mut out = String::new();
@@ -592,93 +892,7 @@ fn header() -> String {
     // header takes and returns `int32_t`, so the constants would need a cast at
     // every use site in Swift for no reason other than a compiler's freedom to
     // choose. One negative member removes the freedom.
-    out.push_str(
-        "/* The result of a call. Zero is success, and it is the only success. */\ntypedef enum PrvStatus {\n",
-    );
-    for status in Status::ALL {
-        let _ = writeln!(out, "    {} = {},", status.c_name(), status.code());
-    }
-    out.push_str(&signed_sentinel("PRV_STATUS_FORCE_SIGNED"));
-    out.push_str("} PrvStatus;\n\n");
-
-    out.push_str("/* What the transport is doing. */\ntypedef enum PrvPlaybackState {\n");
-    for (state, name) in PLAYBACK_STATES {
-        let _ = writeln!(
-            out,
-            "    {} = {},",
-            name,
-            prv_ffi::mapping::playback_code(*state)
-        );
-    }
-    out.push_str(&signed_sentinel("PRV_PLAYBACK_FORCE_SIGNED"));
-    out.push_str("} PrvPlaybackState;\n\n");
-
-    out.push_str("/* What can happen to the transport. */\ntypedef enum PrvTransportEvent {\n");
-    for (index, (_, name)) in TRANSPORT_EVENTS.iter().enumerate() {
-        let _ = writeln!(out, "    {name} = {index},");
-    }
-    out.push_str(&signed_sentinel("PRV_EVENT_FORCE_SIGNED"));
-    out.push_str("} PrvTransportEvent;\n\n");
-
-    out.push_str(
-        "/* The shape of a set's energy over its length. */\ntypedef enum PrvEnergyShape {\n",
-    );
-    for (index, (_, name)) in ENERGY_SHAPES.iter().enumerate() {
-        let _ = writeln!(out, "    {name} = {index},");
-    }
-    out.push_str(&signed_sentinel("PRV_ENERGY_FORCE_SIGNED"));
-    out.push_str("} PrvEnergyShape;\n\n");
-
-    out.push_str(
-        "/* How far the planner may depart from established practice.\n\
-         *\n\
-         * This never relaxes a hard constraint. A clashing key is not generated at\n\
-         * any setting; creativity widens the soft limits only. */\ntypedef enum PrvCreativity {\n",
-    );
-    for (index, (_, name)) in CREATIVITY_SETTINGS.iter().enumerate() {
-        let _ = writeln!(out, "    {name} = {index},");
-    }
-    out.push_str(&signed_sentinel("PRV_CREATIVITY_FORCE_SIGNED"));
-    out.push_str("} PrvCreativity;\n\n");
-
-    out.push_str(
-        r"/* An engine. Opaque: the host never sees inside it, which is what lets the
- * layout change without touching this header. */
-typedef struct PrvEngine PrvEngine;
-
-/* A planner: a library of candidates, and the sets planned from it. */
-typedef struct PrvPlanner PrvPlanner;
-
-/* What the analysis found out about one track. */
-typedef struct PrvAnalysis PrvAnalysis;
-
-",
-    );
-
-    out.push_str(
-        r"/*
- * Reads audio for one track.
- *
- * Called from the audio thread, so it obeys the same contract: no allocation, no
- * locking, no blocking file access. A host that cannot satisfy a read from
- * memory it already holds returns fewer frames than asked for, and the renderer
- * records the shortfall rather than stalling.
- *
- * `planar` points at channels * capacity floats, channel-major. Write `frames`
- * frames beginning at `destination` within each channel and return how many were
- * actually written. Claiming more than was asked for is not believed.
- */
-typedef uint32_t (*PrvReadAudio)(void *user_data,
-                                 uint64_t track,
-                                 int64_t source_offset,
-                                 float *planar,
-                                 uint32_t channels,
-                                 uint32_t capacity,
-                                 uint32_t destination,
-                                 uint32_t frames);
-
-",
-    );
+    emit_types(&mut out);
 
     for declaration in declarations() {
         out.push_str("/*\n");

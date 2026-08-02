@@ -21,6 +21,7 @@ use crate::engine::{Engine, ReadAudio};
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
 use crate::planning::Planner;
+use crate::policy::Policy;
 use crate::status::Status;
 
 /// The version of this boundary, packed as `major << 16 | minor << 8 | patch`.
@@ -930,6 +931,257 @@ pub unsafe extern "C" fn prv_analysis_transition_point(
             *as_mut(out_position)? = position;
             *as_mut(out_energy)? = energy;
         }
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Consent and entitlement
+//
+// Asked in this order: may this leave the device, then is this feature
+// available. A user who has not agreed to cloud analysis is not shown a paywall
+// for it — they are simply not sent anywhere, whatever tier they are on.
+// ---------------------------------------------------------------------------
+
+/// Creates a policy: nothing agreed to, free tier.
+///
+/// # Safety
+///
+/// `out_policy` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_create(out_policy: *mut *mut Policy) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_policy) }?;
+        *slot = core::ptr::null_mut();
+        *slot = Box::into_raw(Box::new(Policy::new()));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys a policy. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `policy` must come from [`prv_policy_create`] and not yet be destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_destroy(policy: *mut Policy) {
+    if policy.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(policy) });
+        Status::Ok
+    });
+}
+
+/// Records that the user agreed to a purpose.
+///
+/// `ordinal` identifies *which* agreement was given — a version of the wording,
+/// or a sequence. It is what makes this a consent record rather than a boolean.
+///
+/// # Safety
+///
+/// `policy` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_grant(policy: *mut Policy, purpose: i32, ordinal: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(policy) }?.grant(purpose, ordinal)
+    })
+    .code()
+}
+
+/// Records that the user withdrew a purpose.
+///
+/// # Safety
+///
+/// `policy` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_withdraw(policy: *mut Policy, purpose: i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(policy) }?.withdraw(purpose)
+    })
+    .code()
+}
+
+/// Withdraws every agreement at once.
+///
+/// One call rather than a loop in the host, because a loop in the host is a loop
+/// that can be interrupted half way.
+///
+/// # Safety
+///
+/// `policy` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_withdraw_all(policy: *mut Policy) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(policy) }?.withdraw_all();
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a purpose is currently agreed to.
+///
+/// # Safety
+///
+/// `policy` must be live and `out_allowed` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_allows(
+    policy: *const Policy,
+    purpose: i32,
+    out_allowed: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let allowed = unsafe { as_ref(policy) }?.allows(purpose)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_allowed) }? = i32::from(allowed);
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether anything at all currently leaves the device.
+///
+/// The single question a privacy screen leads with. Composed in the core from
+/// every purpose that transmits, so a purpose added later is included without
+/// any host being changed.
+///
+/// # Safety
+///
+/// `policy` must be live and `out_leaves` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_anything_leaves_the_device(
+    policy: *const Policy,
+    out_leaves: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let leaves = unsafe { as_ref(policy) }?.anything_leaves_the_device();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_leaves) }? = i32::from(leaves);
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a purpose sends the user's own material rather than a fact about it.
+///
+/// A different question from whether anything leaves the device: a crash report
+/// leaves and carries no music. A consent screen needs both, and one built on
+/// either alone is misleading in one direction or the other.
+///
+/// # Safety
+///
+/// `out_sends` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_purpose_sends_content(purpose: i32, out_sends: *mut i32) -> i32 {
+    guarded_try(|| {
+        let sends = Policy::purpose_sends_content(purpose)?;
+        // SAFETY: the caller's documented contract.
+        *unsafe { as_mut(out_sends) }? = i32::from(sends);
+        Ok(())
+    })
+    .code()
+}
+
+/// Sets the licence tier.
+///
+/// # Safety
+///
+/// `policy` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_set_tier(policy: *mut Policy, tier: i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(policy) }?.set_tier(tier)
+    })
+    .code()
+}
+
+/// Marks the licence expired.
+///
+/// Not a lock-out: everything essential survives, because Master Prompt #29
+/// forbids restricting essential functionality.
+///
+/// # Safety
+///
+/// `policy` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_expire(policy: *mut Policy) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(policy) }?.expire();
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the current licence tier.
+///
+/// # Safety
+///
+/// `policy` must be live and `out_tier` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_tier(policy: *const Policy, out_tier: *mut i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let tier = unsafe { as_ref(policy) }?.tier();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_tier) }? = tier;
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a feature is available under the current licence.
+///
+/// # Safety
+///
+/// `policy` must be live and `out_allowed` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_feature_allowed(
+    policy: *const Policy,
+    feature: i32,
+    out_allowed: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let allowed = unsafe { as_ref(policy) }?.feature_allowed(feature)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_allowed) }? = i32::from(allowed);
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a feature is essential, and so present at every tier.
+///
+/// A host uses this to decide whether an unavailable feature deserves an upgrade
+/// prompt or a bug report. An essential feature that is somehow unavailable is a
+/// defect, not an upsell.
+///
+/// # Safety
+///
+/// `policy` must be live and `out_essential` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_policy_feature_is_essential(
+    policy: *const Policy,
+    feature: i32,
+    out_essential: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let essential = unsafe { as_ref(policy) }?.feature_is_essential(feature)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_essential) }? = i32::from(essential);
         Ok(())
     })
     .code()

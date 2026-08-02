@@ -164,6 +164,14 @@ did not have would be worse than no row at all.
 | A reading that could not be made is absent, not zero | MP#13, MP#20 | `prv-ffi::Analysis` | `silence_has_no_tempo_and_says_so`, `a_reading_that_could_not_be_made_is_absent_rather_than_zero` | **Verified** |
 | A track that cannot be analysed is not planned with defaults | MP#3B, MP#13 | `PRVCore.Analysis.candidate(track:)` | `a_track_the_analysis_could_not_read_is_not_faked_up` | **Verified** |
 | The whole product path | MP#3B, MP#19, MP#20 | boundary + `PRVCore` | `the_whole_application_analyse_plan_place_play` | **Verified** |
+| Nothing leaves the device unless asked for | MP#26 | `prv-ffi::Policy` | `a_new_policy_sends_nothing_anywhere`, `nothingByDefault` | **Verified** |
+| Projects are never used for training without permission | MP#26 | `Purpose::ModelTraining` | `trainingIsOptIn` | **Verified** |
+| A consent screen can tell content from a fact about it | MP#26 | `prv_purpose_sends_content` | `sending_content_implies_leaving_the_device_but_not_the_reverse` | **Verified** |
+| Essential features are never gated | MP#29 | `prv-ffi::Policy` | `every_essential_feature_is_available_on_the_free_tier`, `expiryIsNotLockout` | **Verified** |
+| A purchase is not a consent | MP#26, MP#29 | `prv-ffi::Policy` | `consent_and_licence_are_independent`, `independence` | **Verified** |
+| The audio thread cannot reach a non-realtime call | ADR-0002 | `PRVCore.RenderHandle` | enforced by the type; `PRVKit.Session` compiles only through it | **Enforced** |
+| The application workflow | MP#3B, MS#001 | `PRVKit.Session` | `wholeWorkflow`, `shortTrackIsKept` | **Verified** |
+| Presentation holds no business rules | MP#4 | `PRVUI` models vs views | every threshold tested in `PRVUITests`; views format nothing | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

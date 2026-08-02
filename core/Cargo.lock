@@ -189,11 +189,13 @@ name = "prv-ffi"
 version = "0.1.0"
 dependencies = [
  "prv-analysis",
+ "prv-entitlements",
  "prv-harmony",
  "prv-mix",
  "prv-project",
  "prv-render",
  "prv-rt",
+ "prv-security",
  "prv-time",
  "prv-timeline",
  "prv-transport",

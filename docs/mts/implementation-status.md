@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 30._
+_Last updated: Sprint 34._
 
 ## Sprint 0 — Foundation
 
@@ -447,6 +447,30 @@ There is now one test, in Swift, that does what the product does: decode audio,
 analyse it, hand the findings to the planner, ask for a set, apply the set to the
 project, press play, and hear it. Everything in that sentence is verified on
 every commit.
+
+## Sprints 33–34 — The Apple layer, and the two questions asked before anything
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `PRVKit` ports, session, decoders, project store | Completed | **Verified on Linux** | The workflow: import, analyse, plan, adopt, play |
+| `PRVUI` models for six spaces | Completed | **Verified on Linux** | Every threshold and format; the views decide nothing |
+| `RenderHandle` | Completed | Verified | The audio thread cannot reach `placeTrack`, because it is not on the type it holds |
+| `AVFoundationDecoder`, `CoreAudioOutput`, `KeychainStore`, `Views.swift` | Completed | *Authored* | The four things a macOS runner must check |
+| `prv-ffi::policy` — consent and entitlement | Completed | Verified | Nothing agreed to by default; essential features at every tier |
+| `PRVCore.Policy` | Completed | **Verified on Linux** | Both privacy questions exposed, not one |
+| ABI minor version 1.3 | Completed | Verified | Calls added, nothing existing moved |
+
+### The privacy distinction the tests found
+
+A test was written asserting that a purpose which sends no content also does not
+leave the device. The core disagreed, and the core was right: `CrashDiagnostics`
+transmits and carries none of the user's music.
+
+Those are two different questions and a consent screen needs both. A screen built
+on "does anything leave the device" alone claims the user's recordings are being
+sent when they are not; one built on "does this send content" alone hides an
+upload entirely. The boundary now exposes both, and the test asserts the true
+relationship — sending content implies leaving the device, and not the reverse.
 
 ### The limitation that shrank
 
