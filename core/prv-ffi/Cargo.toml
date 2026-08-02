@@ -22,6 +22,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 prv-analysis = { path = "../prv-analysis" }
+prv-export = { path = "../prv-export" }
 prv-harmony = { path = "../prv-harmony" }
 prv-entitlements = { path = "../prv-entitlements" }
 prv-library = { path = "../prv-library" }

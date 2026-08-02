@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 4
+#define PRV_ABI_MINOR 5
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -175,6 +175,9 @@ typedef struct PrvPolicy PrvPolicy;
 /* The user's music, and the last search over it. */
 typedef struct PrvCollection PrvCollection;
 
+/* What a master measures, and what a target would need of it. */
+typedef struct PrvDelivery PrvDelivery;
+
 /*
  * Reads audio for one track.
  *
@@ -212,6 +215,47 @@ typedef enum PrvSortKey {
        int32_t every function here takes. Never returned, never compared. */
     PRV_SORT_FORCE_SIGNED = -1,
 } PrvSortKey;
+
+/* Where a master is going. */
+typedef enum PrvDeliveryTarget {
+    PRV_TARGET_STREAMING = 0,
+    PRV_TARGET_CLUB = 1,
+    PRV_TARGET_BROADCAST = 2,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_TARGET_FORCE_SIGNED = -1,
+} PrvDeliveryTarget;
+
+/* What container it goes in. */
+typedef enum PrvFormat {
+    PRV_FORMAT_WAVE = 0,
+    PRV_FORMAT_AIFF = 1,
+    PRV_FORMAT_FLAC = 2,
+    PRV_FORMAT_LOSSY_320 = 3,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_FORMAT_FORCE_SIGNED = -1,
+} PrvFormat;
+
+/* At what resolution. Dither follows this, not the format. */
+typedef enum PrvBitDepth {
+    PRV_DEPTH_SIXTEEN = 0,
+    PRV_DEPTH_TWENTY_FOUR = 1,
+    PRV_DEPTH_FLOAT32 = 2,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_DEPTH_FORCE_SIGNED = -1,
+} PrvBitDepth;
+
+/* Whether the master can go as it is. */
+typedef enum PrvCompliance {
+    PRV_COMPLIANCE_READY = 0,
+    PRV_COMPLIANCE_NEEDS_GAIN = 1,
+    PRV_COMPLIANCE_WOULD_CLIP = 2,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_COMPLIANCE_FORCE_SIGNED = -1,
+} PrvCompliance;
 
 /* Which text field of a track to read. */
 typedef enum PrvTextField {
@@ -689,6 +733,42 @@ int32_t prv_collection_text_field(const PrvCollection *collection, uint64_t id,
  */
 int32_t prv_collection_duration(const PrvCollection *collection, uint64_t id,
                                 int64_t *out_duration);
+
+/*
+ * Judges a rendered master against a delivery target.
+ *
+ * The analysis is of the rendered mix, so the number gating the export is
+ * the number the meter showed. The core writes no files: it answers what
+ * must happen to the master, and the host applies the gain and encodes.
+ */
+int32_t prv_delivery_judge(const PrvAnalysis *analysis, int32_t target, int32_t format,
+                           int32_t depth, PrvDelivery **out_delivery);
+
+/*
+ * Destroys a delivery report. NULL is accepted and does nothing.
+ */
+void prv_delivery_destroy(PrvDelivery *delivery);
+
+/*
+ * Reads the whole verdict at once.
+ *
+ * Together rather than a call per number: a host showing a gain without
+ * the resulting true peak is showing half the decision, and separate calls
+ * are how the other half gets forgotten.
+ *
+ * A gain of zero on a master far below target is not an oversight. That is
+ * usually a mistake upstream — a muted lane, the wrong project — and
+ * turning it up produces a loud version of the wrong thing.
+ */
+int32_t prv_delivery_verdict(const PrvDelivery *delivery, int32_t *out_compliance,
+                             double *out_measured_lufs, double *out_measured_true_peak,
+                             double *out_gain_db, double *out_resulting_true_peak,
+                             double *out_headroom_db, int32_t *out_needs_dither);
+
+/*
+ * Whether a person should look before exporting.
+ */
+int32_t prv_delivery_needs_attention(const PrvDelivery *delivery, int32_t *out_needs);
 
 #ifdef __cplusplus
 }

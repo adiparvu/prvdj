@@ -113,3 +113,64 @@ struct CollectionTests {
         #expect(try collection.text(.title, of: 1) == title)
     }
 }
+
+@Suite("Getting a set out")
+struct DeliveryTests {
+    private static let rate: UInt32 = 44_100
+
+    private func tone(amplitude: Float, seconds: Int) -> [Float] {
+        let length = seconds * Int(Self.rate)
+        return (0..<length).map { index in
+            amplitude * sin(Float(index) * 0.05)
+        }
+    }
+
+    @Test("a loud master is judged against a target and reports every number")
+    func judging() throws {
+        let analysis = try Analysis(samples: tone(amplitude: 0.5, seconds: 32), sampleRate: Self.rate)
+        let verdict = try analysis.judge(for: .streaming)
+
+        #expect(verdict.measuredLUFS.isFinite)
+        #expect(verdict.measuredTruePeak.isFinite)
+        #expect(verdict.resultingTruePeak.isFinite)
+        // The resulting peak is the measured peak moved by exactly the gain —
+        // the one part of this that needs no measurement.
+        #expect(abs((verdict.measuredTruePeak + verdict.gainDB) - verdict.resultingTruePeak) < 0.001)
+    }
+
+    @Test("dither follows the depth, not the format")
+    func ditherFollowsDepth() throws {
+        // Dithering a float export adds noise for nothing.
+        let analysis = try Analysis(samples: tone(amplitude: 0.5, seconds: 32), sampleRate: Self.rate)
+        #expect(try analysis.judge(for: .club, format: .wave, depth: .float32).needsDither == false)
+        #expect(try analysis.judge(for: .club, format: .wave, depth: .sixteen).needsDither)
+    }
+
+    @Test("a master far below target is not simply turned up")
+    func veryQuietIsNotGained() throws {
+        // Almost always a mistake upstream — a muted lane, the wrong project.
+        // Applying twenty decibels produces a loud version of the wrong thing.
+        let analysis = try Analysis(
+            samples: tone(amplitude: 0.000_01, seconds: 32),
+            sampleRate: Self.rate
+        )
+        let verdict = try analysis.judge(for: .streaming)
+        #expect(verdict.gainDB == 0, "a near-silent master was gained up rather than questioned")
+    }
+
+    @Test("every target, format and depth is accepted")
+    func everyCombinationIsDefined() throws {
+        let analysis = try Analysis(samples: tone(amplitude: 0.4, seconds: 32), sampleRate: Self.rate)
+        for target in DeliveryTarget.allCases {
+            for format in AudioFormat.allCases {
+                for depth in BitDepth.allCases {
+                    let verdict = try analysis.judge(for: target, format: format, depth: depth)
+                    #expect(
+                        verdict.compliance != .unrecognised(code: -1),
+                        "\(target)/\(format)/\(depth) produced no verdict"
+                    )
+                }
+            }
+        }
+    }
+}

@@ -18,6 +18,12 @@ import Foundation
 public final class Analysis {
     private let handle: OpaquePointer
 
+    /// The handle, for the delivery judgement in this module.
+    ///
+    /// `internal`: everything above `PRVCore` should be unable to reach a raw
+    /// pointer at all, which is the whole point of the wrapper.
+    var rawHandle: OpaquePointer { handle }
+
     /// Analyses a track from mono samples.
     ///
     /// The audio is borrowed for the duration of the call and never retained, so

@@ -199,6 +199,17 @@ impl Analysis {
         Ok(narrow(total / f64::from(count)))
     }
 
+    /// The loudness measurement itself, for the export gate.
+    ///
+    /// Handed over rather than re-measured so the number that gates an export is
+    /// the number the meter showed. Two measurements of the same audio that
+    /// disagree by a tenth of a decibel would produce an export that is ready in
+    /// one place and not in the other, and nothing would say why.
+    #[must_use]
+    pub fn loudness_measurement(&self) -> Option<&prv_analysis::loudness::Loudness> {
+        self.profile.loudness()
+    }
+
     /// How long the analysed audio was, in frames.
     #[must_use]
     pub fn duration(&self) -> i64 {

@@ -175,6 +175,9 @@ did not have would be worse than no row at all.
 | A host can search the collection | MS#001 | `prv-ffi::collection` | `a_search_finds_what_the_user_typed_and_reads_back_in_order`, `searching` | **Verified** |
 | Deleting a track never destroys its metadata | MP#9, MS#001 | `prv_collection_restore` | `removing_a_track_hides_it_without_destroying_it`, `removeAndRestore` | **Verified** |
 | A string crossing the boundary is never truncated silently | MP#27 | `prv_collection_text_field` | `a_field_that_did_not_fit_reports_the_length_it_needed`, `longTitle`, `unicode` | **Verified** |
+| A master is judged before it is exported | MP#3A, MP#3C | `prv-ffi::delivery` | `judging`, `everyCombinationIsDefined` | **Verified** |
+| A very quiet master is questioned, not amplified | MP#3C, MP#13 | `prv-ffi::Delivery::gain_db` | `veryQuietIsNotGained` | **Verified** |
+| Dither follows the depth, not the format | MP#3A | `prv-ffi::Delivery::needs_dither` | `ditherFollowsDepth`, `a_dither_decision_follows_the_depth_rather_than_the_format` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

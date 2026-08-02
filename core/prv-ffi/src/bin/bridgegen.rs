@@ -45,6 +45,7 @@ use std::fmt::Write as _;
 use std::process::ExitCode;
 
 use prv_ffi::collection::{SORT_KEYS, TEXT_FIELDS};
+use prv_ffi::delivery::{COMPLIANCE, DEPTHS, FORMATS, TARGETS};
 use prv_ffi::mapping::{PLAYBACK_STATES, TRANSPORT_EVENTS};
 use prv_ffi::planning::{CREATIVITY_SETTINGS, ENERGY_SHAPES};
 use prv_ffi::policy::{purpose_code, tier_code};
@@ -244,6 +245,26 @@ fn declarations() -> Vec<Declaration> {
     ) -> i32 = prv_ffi::exports::prv_collection_text_field;
     let _: unsafe extern "C" fn(*const prv_ffi::Collection, u64, *mut i64) -> i32 =
         prv_ffi::exports::prv_collection_duration;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Analysis,
+        i32,
+        i32,
+        i32,
+        *mut *mut prv_ffi::Delivery,
+    ) -> i32 = prv_ffi::exports::prv_delivery_judge;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Delivery) = prv_ffi::exports::prv_delivery_destroy;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Delivery,
+        *mut i32,
+        *mut f64,
+        *mut f64,
+        *mut f64,
+        *mut f64,
+        *mut f64,
+        *mut i32,
+    ) -> i32 = prv_ffi::exports::prv_delivery_verdict;
+    let _: unsafe extern "C" fn(*const prv_ffi::Delivery, *mut i32) -> i32 =
+        prv_ffi::exports::prv_delivery_needs_attention;
 
     vec![
         Declaration {
@@ -724,6 +745,44 @@ fn declarations() -> Vec<Declaration> {
                         uint64_t id, int64_t *out_duration)",
             doc: &["A track's length in frames."],
         },
+        Declaration {
+            signature: "int32_t prv_delivery_judge(const PrvAnalysis *analysis, int32_t target, \
+                        int32_t format, int32_t depth, PrvDelivery **out_delivery)",
+            doc: &[
+                "Judges a rendered master against a delivery target.",
+                "",
+                "The analysis is of the rendered mix, so the number gating the export is",
+                "the number the meter showed. The core writes no files: it answers what",
+                "must happen to the master, and the host applies the gain and encodes.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_delivery_destroy(PrvDelivery *delivery)",
+            doc: &["Destroys a delivery report. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_delivery_verdict(const PrvDelivery *delivery, \
+                        int32_t *out_compliance, double *out_measured_lufs, \
+                        double *out_measured_true_peak, double *out_gain_db, \
+                        double *out_resulting_true_peak, double *out_headroom_db, \
+                        int32_t *out_needs_dither)",
+            doc: &[
+                "Reads the whole verdict at once.",
+                "",
+                "Together rather than a call per number: a host showing a gain without",
+                "the resulting true peak is showing half the decision, and separate calls",
+                "are how the other half gets forgotten.",
+                "",
+                "A gain of zero on a master far below target is not an oversight. That is",
+                "usually a mistake upstream — a muted lane, the wrong project — and",
+                "turning it up produces a loud version of the wrong thing.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_delivery_needs_attention(const PrvDelivery *delivery, \
+                        int32_t *out_needs)",
+            doc: &["Whether a person should look before exporting."],
+        },
     ]
 }
 
@@ -867,6 +926,50 @@ fn emit_types(out: &mut String) {
 
     emit_enum(
         out,
+        "/* Where a master is going. */",
+        "PrvDeliveryTarget",
+        "PRV_TARGET_FORCE_SIGNED",
+        TARGETS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* What container it goes in. */",
+        "PrvFormat",
+        "PRV_FORMAT_FORCE_SIGNED",
+        FORMATS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* At what resolution. Dither follows this, not the format. */",
+        "PrvBitDepth",
+        "PRV_DEPTH_FORCE_SIGNED",
+        DEPTHS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* Whether the master can go as it is. */",
+        "PrvCompliance",
+        "PRV_COMPLIANCE_FORCE_SIGNED",
+        COMPLIANCE
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
         "/* Which text field of a track to read. */",
         "PrvTextField",
         "PRV_FIELD_FORCE_SIGNED",
@@ -969,6 +1072,9 @@ typedef struct PrvPolicy PrvPolicy;
 
 /* The user's music, and the last search over it. */
 typedef struct PrvCollection PrvCollection;
+
+/* What a master measures, and what a target would need of it. */
+typedef struct PrvDelivery PrvDelivery;
 
 ",
     );

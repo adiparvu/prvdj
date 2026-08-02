@@ -18,6 +18,7 @@
 use crate::abi;
 use crate::analysis::Analysis;
 use crate::collection::Collection;
+use crate::delivery::Delivery;
 use crate::engine::{Engine, ReadAudio};
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
@@ -1484,6 +1485,122 @@ pub unsafe extern "C" fn prv_collection_duration(
         let duration = unsafe { as_ref(collection) }?.duration(id)?;
         // SAFETY: as above.
         *unsafe { as_mut(out_duration) }? = duration;
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Delivery
+//
+// The core writes no files. It answers what has to happen to a master before it
+// can go where it is going; the host applies the gain, encodes and writes.
+// ---------------------------------------------------------------------------
+
+/// Judges a rendered master against a delivery target.
+///
+/// The analysis is of the rendered mix, so the number gating the export is the
+/// number the meter showed.
+///
+/// # Safety
+///
+/// `analysis` must be live and `out_delivery` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_delivery_judge(
+    analysis: *const Analysis,
+    target: i32,
+    format: i32,
+    depth: i32,
+    out_delivery: *mut *mut Delivery,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_delivery) }?;
+        *slot = core::ptr::null_mut();
+        // SAFETY: as above.
+        let analysis = unsafe { as_ref(analysis) }?;
+        let delivery = Delivery::judge(analysis, target, format, depth)?;
+        *slot = Box::into_raw(Box::new(delivery));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys a delivery report. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `delivery` must come from [`prv_delivery_judge`] and not yet be destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_delivery_destroy(delivery: *mut Delivery) {
+    if delivery.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(delivery) });
+        Status::Ok
+    });
+}
+
+/// Reads the whole verdict at once.
+///
+/// Everything together rather than a call per number, because a host showing a
+/// gain without the resulting peak is showing half the decision, and separate
+/// calls are how the other half gets forgotten.
+///
+/// # Safety
+///
+/// `delivery` must be live and every out-parameter writable.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the verdict is seven numbers a host shows together; splitting it \
+              into seven calls is how the ones that matter get left out"
+)]
+pub unsafe extern "C" fn prv_delivery_verdict(
+    delivery: *const Delivery,
+    out_compliance: *mut i32,
+    out_measured_lufs: *mut f64,
+    out_measured_true_peak: *mut f64,
+    out_gain_db: *mut f64,
+    out_resulting_true_peak: *mut f64,
+    out_headroom_db: *mut f64,
+    out_needs_dither: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let delivery = unsafe { as_ref(delivery) }?;
+        // SAFETY: as above, for each out-parameter.
+        unsafe {
+            *as_mut(out_compliance)? = delivery.compliance();
+            *as_mut(out_measured_lufs)? = delivery.measured_lufs();
+            *as_mut(out_measured_true_peak)? = delivery.measured_true_peak();
+            *as_mut(out_gain_db)? = delivery.gain_db();
+            *as_mut(out_resulting_true_peak)? = delivery.resulting_true_peak();
+            *as_mut(out_headroom_db)? = delivery.headroom_db();
+            *as_mut(out_needs_dither)? = i32::from(delivery.needs_dither());
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a person should look before exporting.
+///
+/// # Safety
+///
+/// `delivery` must be live and `out_needs` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_delivery_needs_attention(
+    delivery: *const Delivery,
+    out_needs: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let needs = unsafe { as_ref(delivery) }?.needs_attention();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needs) }? = i32::from(needs);
         Ok(())
     })
     .code()

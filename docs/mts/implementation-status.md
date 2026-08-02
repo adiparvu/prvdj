@@ -477,6 +477,24 @@ because it exposed the removal and not the restore. Every host would have had a
 destructive action with no way back, which is the opposite of Master Prompt #9
 whatever it was called.
 
+### Sprint 36 — delivery
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::delivery` | Completed | Verified | What must happen to a master before it goes where it is going |
+| The verdict is read in one call | Completed | Verified | A gain without its resulting peak is half a decision |
+| `PRVCore.Analysis.judge(for:)` | Completed | **Verified on Linux** | Every target, format and depth |
+| ABI minor version 1.5 | Completed | Verified | Calls added, nothing existing moved |
+
+The core still writes no files. It answers the question an encoder needs
+answered first, and the host applies the gain and encodes — which is what lets
+one rule serve a WAV on a laptop, a stream upload and a broadcast delivery.
+
+A master far below its target reports a gain of *zero*. That is not an
+oversight: it is almost always a mistake upstream — a muted lane, the wrong
+project — and twenty decibels of gain produces a loud version of the wrong
+thing.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not
