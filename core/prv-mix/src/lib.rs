@@ -96,4 +96,4 @@ pub use plan::{plan, MixPlan, PlanError, PlannedTrack};
 pub use render::{
     render, PlacementIds, RenderError, RenderedMix, RenderedTransition, Technique, TechniqueChoice,
 };
-pub use transition::{Component, Rejection, ScoreComponents, TransitionScore};
+pub use transition::{Component, Rejection, ScoreComponents, TransitionScore, Weights};

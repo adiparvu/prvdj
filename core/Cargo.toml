@@ -12,6 +12,7 @@ members = [
     "prv-analysis",
     "prv-mix",
     "prv-timeline",
+    "prv-learning",
 ]
 
 [workspace.package]

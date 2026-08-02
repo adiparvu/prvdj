@@ -167,6 +167,7 @@ pub struct Goal {
     creativity: Creativity,
     tempo_floor: Option<f32>,
     tempo_ceiling: Option<f32>,
+    weights: crate::transition::Weights,
 }
 
 impl Goal {
@@ -179,7 +180,28 @@ impl Goal {
             creativity: Creativity::Balanced,
             tempo_floor: None,
             tempo_ceiling: None,
+            weights: crate::transition::Weights::DEFAULT,
         }
+    }
+
+    /// Sets how much each part of a transition counts.
+    ///
+    /// ADR-0006 puts the weights on the goal because they come from two places
+    /// that both belong to the request: the scenario, and the user's learned
+    /// profile. A goal built without them uses [`crate::transition::Weights::DEFAULT`],
+    /// so a system that has learned nothing behaves exactly as one with no
+    /// learning at all — which is what makes it safe to ship learning switched
+    /// on from the first day.
+    #[must_use]
+    pub const fn with_weights(mut self, weights: crate::transition::Weights) -> Self {
+        self.weights = weights;
+        self
+    }
+
+    /// How much each part of a transition counts.
+    #[must_use]
+    pub const fn weights(&self) -> crate::transition::Weights {
+        self.weights
     }
 
     /// Sets how far the planner may depart from established practice.

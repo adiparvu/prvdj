@@ -81,19 +81,45 @@ pub struct ScoreComponents {
     pub vocal: f32,
 }
 
-impl ScoreComponents {
-    /// The weights each component carries in the total.
+/// How much each component counts toward a transition's total.
+///
+/// # Why this is a value rather than a constant
+///
+/// ADR-0006 says the weights come from the scenario *and from the user's
+/// learned profile*. A constant cannot do the second: two DJs disagree about
+/// how much a slightly wrong energy matters, and the whole point of Master
+/// Prompt #5 is that the system notices which one it is working for.
+///
+/// Making them a value also makes the default honest. [`Weights::DEFAULT`] is
+/// where the provisional numbers live, in one place, with the argument for
+/// their ordering — and a profile that has learned nothing yet returns exactly
+/// them, so an untrained system behaves identically to one with no learning at
+/// all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Weights {
+    /// How much harmonic compatibility counts.
+    pub harmonic: f32,
+    /// How much tempo distance counts.
+    pub tempo: f32,
+    /// How much energy fit counts.
+    pub energy: f32,
+    /// How much having somewhere to mix counts.
+    pub structure: f32,
+    /// How much level match counts.
+    pub level: f32,
+    /// How much vocal collision risk counts.
+    pub vocal: f32,
+}
+
+impl Weights {
+    /// The weights a system that has learned nothing uses.
     ///
     /// **Provisional**, like every weight in this system, and calibrated in
     /// Phase 3 as ADR-0006 schedules. The ordering they induce reflects what
     /// breaks a mix most visibly: a harmonic clash and a tempo the deck cannot
     /// reach are noticed by everyone, a level jump by most, a slightly wrong
     /// energy by a DJ.
-    ///
-    /// They are named rather than inlined so that recalibration is a change to
-    /// six numbers in one place, and so that an explanation can say which
-    /// component dominated a decision.
-    pub const WEIGHTS: Self = Self {
+    pub const DEFAULT: Self = Self {
         harmonic: 0.30,
         tempo: 0.25,
         energy: 0.20,
@@ -102,22 +128,71 @@ impl ScoreComponents {
         vocal: 0.05,
     };
 
-    /// The weighted total, from zero to one.
+    /// The smallest weight any component may be reduced to.
+    ///
+    /// A tenth of its default. Learning adjusts how much a component counts; it
+    /// must never be able to switch one off, because a user who has never
+    /// happened to reject a transition for a level jump has not told the system
+    /// that level does not matter — they have told it nothing about level.
+    pub const FLOOR: f32 = 0.1;
+
+    /// The largest multiple of its default any component may reach.
+    pub const CEILING: f32 = 3.0;
+
+    /// The sum of every weight.
     #[must_use]
     pub fn total(&self) -> f32 {
-        let weights = Self::WEIGHTS;
+        self.harmonic + self.tempo + self.energy + self.structure + self.level + self.vocal
+    }
+
+    /// Returns these weights with each component scaled, then bounded.
+    ///
+    /// The bounds are the whole safety argument. Learning changes how much
+    /// something counts, never whether it counts, so no amount of observation
+    /// can make the system stop caring about a clash — and the hard constraints
+    /// are not weighted at all, so no amount of learning can reach them either.
+    #[must_use]
+    pub fn scaled(&self, by: Self) -> Self {
+        let bound = |weight: f32, scale: f32, default: f32| -> f32 {
+            if !weight.is_finite() || !scale.is_finite() {
+                return default;
+            }
+            (weight * scale).clamp(default * Self::FLOOR, default * Self::CEILING)
+        };
+        Self {
+            harmonic: bound(self.harmonic, by.harmonic, Self::DEFAULT.harmonic),
+            tempo: bound(self.tempo, by.tempo, Self::DEFAULT.tempo),
+            energy: bound(self.energy, by.energy, Self::DEFAULT.energy),
+            structure: bound(self.structure, by.structure, Self::DEFAULT.structure),
+            level: bound(self.level, by.level, Self::DEFAULT.level),
+            vocal: bound(self.vocal, by.vocal, Self::DEFAULT.vocal),
+        }
+    }
+}
+
+impl Default for Weights {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl ScoreComponents {
+    /// The weighted total under the default weights, from zero to one.
+    #[must_use]
+    pub fn total(&self) -> f32 {
+        self.total_with(Weights::DEFAULT)
+    }
+
+    /// The weighted total under given weights, from zero to one.
+    #[must_use]
+    pub fn total_with(&self, weights: Weights) -> f32 {
         let sum = f64::from(self.harmonic) * f64::from(weights.harmonic)
             + f64::from(self.tempo) * f64::from(weights.tempo)
             + f64::from(self.energy) * f64::from(weights.energy)
             + f64::from(self.structure) * f64::from(weights.structure)
             + f64::from(self.level) * f64::from(weights.level)
             + f64::from(self.vocal) * f64::from(weights.vocal);
-        let total_weight = f64::from(weights.harmonic)
-            + f64::from(weights.tempo)
-            + f64::from(weights.energy)
-            + f64::from(weights.structure)
-            + f64::from(weights.level)
-            + f64::from(weights.vocal);
+        let total_weight = f64::from(weights.total());
         if total_weight <= 0.0 {
             return 0.0;
         }
@@ -303,7 +378,7 @@ pub fn score(
     };
 
     Ok(TransitionScore {
-        total: components.total(),
+        total: components.total_with(goal.weights()),
         components,
         harmony,
         tempo_change,

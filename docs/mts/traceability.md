@@ -106,7 +106,12 @@ did not have would be worse than no row at all.
 | Explanations render the actual arithmetic | ADR-0006, MP#25 | `prv-mix::TransitionScore` | `every_move_carries_the_evidence_that_produced_it` | **Verified** |
 | An unanswerable request explains what was missing | MP#10, MP#25 | `prv-mix::PlanError` | `a_library_outside_the_tempo_range_says_so`, `a_short_set_is_returned_rather_than_refused` | **Verified** |
 | Full musical capability offline | MP#1, MP#26, ADR-0006 | `prv-mix::Goal` | the planner has no network dependency, enforced by architecture rule 1 | **Enforced** |
-| Learning profile | MP#5 | — | — | Not started |
+| The system learns one user's taste | MP#5 | `prv-learning::Profile` | `a_preference_is_learned_from_what_distinguishes_choices` | **Verified** |
+| Learning cannot reach the safety rules | MP#3B, MP#5 | `prv-mix::Weights::scaled` | `no_amount_of_observation_can_switch_a_component_off` | **Verified** |
+| Influence arrives gradually, never as a jump | MP#5, MP#25 | `prv-learning::Inference::strength` | `influence_arrives_gradually_rather_than_switching_on`, `a_handful_of_observations_barely_moves_anything` | **Verified** |
+| The profile is explainable and correctable | MP#5 | `prv-learning::Profile::explain` | `the_user_can_correct_one_inference_and_delete_all_of_them` | **Verified** |
+| The profile holds nothing that identifies anyone | MP#26 | `prv-learning::Observation` | structural — an observation holds six scores and an outcome | **Enforced** |
+| Scenario and profile weights combine | ADR-0006 | `prv-learning::Profile::weights_from` | `learning_starts_from_the_scenario_rather_than_replacing_it` | **Verified** |
 | Agent registry and orchestration | MP#6, MP#19 | — | — | Not started |
 
 ## Product and platform

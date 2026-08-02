@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 13._
+_Last updated: Sprint 14._
 
 ## Sprint 0 — Foundation
 
@@ -162,6 +162,17 @@ _Last updated: Sprint 13._
 | `SetPlacementSource` operation | Completed | Verified | A new operation rather than a redefined one, as ADR-0003 requires |
 | Source offset in the fold, with an inverse | Completed | Verified | A log that predates it means zero, which is what it meant when written |
 | Trim and split emit it | Completed | Verified | The audio under a clip no longer slides on reload |
+
+## Sprint 14 — The personal profile
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| Objective weights are a value, not a constant | Completed | Verified | ADR-0006 says they come from the scenario and the profile; a constant could do neither |
+| `prv-learning` observation model | Completed | Verified | Behaviour rather than a preferences screen; an ignored suggestion teaches nothing |
+| `prv-learning` inference | Completed | Verified | Correlation, not average — a component with no contrast is not learned from |
+| Confidence gating | Completed | Verified | Influence arrives gradually; no observation changes the system's character |
+| Bounds that learning cannot cross | Completed | Verified | No profile can switch a component off or reach a hard constraint |
+| Explain, correct and delete | Completed | Verified | The user owns it; a cleared profile is indistinguishable from a new one |
 
 ## Not started
 
