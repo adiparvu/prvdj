@@ -78,6 +78,7 @@ mod tests {
     use super::*;
     use prv_mix::{Creativity, EnergyShape};
     use prv_security::{ProcessingLocation, Purpose};
+    use prv_time::SampleRate;
 
     fn a_request() -> Intent {
         Intent::PlanSet {
@@ -113,7 +114,9 @@ mod tests {
         // The whole crate in one test, taking the path a privacy-conscious user
         // actually takes: they have agreed to nothing at all.
         let intent = a_request();
-        let goal = intent.to_goal(48_000).expect("a valid request");
+        let goal = intent
+            .to_goal(SampleRate::HZ_48000)
+            .expect("a valid request");
         assert_eq!(goal.duration().get(), 120 * 60 * 48_000);
         assert_eq!(goal.shape(), EnergyShape::Arc);
 

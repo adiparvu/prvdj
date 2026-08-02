@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 27._
+_Last updated: Sprint 28._
 
 ## Sprint 0 — Foundation
 
@@ -313,11 +313,44 @@ _Last updated: Sprint 27._
 | A branch no longer reuses the trunk's identities | Completed | Verified | The high-water mark of what a log has *issued*, not only what it has seen |
 | A name collision is a conflict, not a duplicate | Completed | Verified | `ConflictKind::SameNameDifferentWork`; a retried delivery stays boring |
 
+## Sprint 28 — Restore points, and two clocks that disagreed
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-sync::backup` retention | Completed | Verified | Thinned by age band, not truncated; a named point is never discarded |
+| `prv-mix::pacing` | Completed | Verified | One rule for how far a set advances, called by both the planner and the renderer |
+| A plan's length is the length it renders at | Completed | Verified | It was not: a forty-minute plan rendered as thirteen minutes and reported no error |
+| `Goal` carries its sample rate | Completed | Verified | A duration in frames is not a duration until something says how long a frame is |
+| A short set is reported as short | Completed | Verified | `duration_error` is also what the search sorts by, so the wrong number was choosing plans |
+
+### The defect, stated plainly
+
+The planner laid tracks end to end and the renderer started each track at the
+outgoing track's *exit point* — where the analysis says a record wants to be
+left. Two models of the same clock, in two files, neither aware of the other.
+
+For material with no exit points the two nearly agree, which is why every
+existing test passed: they used tracks with no analysis attached. For analysed
+material — the normal case, and the case the product exists for — eight
+five-minute records whose exit points sit a quarter of the way in produced a
+**forty-minute plan and a thirteen-minute mix**, with `duration_error` reporting
+the set as a perfect match for what the user asked for.
+
+The second half is what made it serious rather than merely wrong. A planner that
+comes up short can say so, and the user can accept it or ask for more. A planner
+that comes up short and reports success cannot be caught — and `duration_error`
+is also the number the beam search sorts by, so the wrong clock was choosing
+between plans as well as describing them.
+
+The fix is one function, in `prv-mix::pacing`, called from both sides. It was
+found by a probe left behind by the Sprint 26 adversarial review, read rather
+than deleted.
+
 ## Where the core stands
 
 Every one of the eighteen bounded contexts in the [module
 index](03-module-index.md) now has a crate in `core/`, built and tested here.
-Twenty-two crates, acyclic, with no third-party runtime dependency.
+Twenty-three crates, acyclic, with no third-party runtime dependency.
 
 What that does **not** mean, and the distinction is the point of this document:
 the core *decides*; it does not *act*. There is no code here that opens a file, a
@@ -336,8 +369,8 @@ So the honest summary is:
 
 The remaining core-side gaps are recorded per sprint under *Known limitations*
 and summarised in [17-known-limitations.md](17-known-limitations.md). The largest
-are time-stretching with key lock (Phase 2 audio work), a realtime loudness
-meter, and the render path that turns a project into a file.
+are time-stretching with key lock (Phase 2 audio work) and a realtime loudness
+meter.
 
 ## Environment limitation
 

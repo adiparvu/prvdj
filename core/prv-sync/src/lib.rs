@@ -25,10 +25,18 @@
 //! `prv-security`'s audit log does with the same problem, for the reason
 //! explained in [`outbox`]: one holds a record of what happened, the other holds
 //! the work itself.
+//!
+//! The same rule is why [`backup`] lives here rather than in `prv-project`.
+//! Thinning restore points is the one place in the system that deliberately
+//! discards something, so it belongs beside the module whose whole argument is
+//! about not discarding — where the exception has to be justified in front of
+//! the rule.
 
+pub mod backup;
 pub mod outbox;
 pub mod state;
 
+pub use backup::{thin, PointKind, RestorePoint, RetentionPolicy};
 pub use outbox::{Outbox, OutboxError};
 pub use state::{advance, SyncEvent, SyncState};
 

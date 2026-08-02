@@ -18,7 +18,7 @@
 //! becomes a curve and a duration, and a prompt that cannot be turned into one
 //! produces a clarifying question rather than a guess.
 
-use prv_time::Frames;
+use prv_time::{Frames, SampleRate};
 
 /// The shape of a set's energy over its length.
 ///
@@ -163,6 +163,7 @@ impl Creativity {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Goal {
     duration: Frames,
+    sample_rate: SampleRate,
     shape: EnergyShape,
     creativity: Creativity,
     tempo_floor: Option<f32>,
@@ -172,16 +173,33 @@ pub struct Goal {
 
 impl Goal {
     /// Creates a goal for a set of a given length and shape.
+    ///
+    /// # The sample rate is not optional, and was once missing
+    ///
+    /// A duration expressed in frames is not a duration until something says how
+    /// long a frame is. The goal carried one implicitly — every caller had a rate
+    /// in mind when it converted minutes to frames — and the planner, which had
+    /// no way to ask, could not work out how long a transition would overlap for.
+    /// So it assumed there was no overlap and no exit point, and reported set
+    /// lengths that the renderer then contradicted. Requiring the rate here is
+    /// what closes that off: the question can now be asked, so it is answered.
     #[must_use]
-    pub const fn new(duration: Frames, shape: EnergyShape) -> Self {
+    pub const fn new(duration: Frames, sample_rate: SampleRate, shape: EnergyShape) -> Self {
         Self {
             duration,
+            sample_rate,
             shape,
             creativity: Creativity::Balanced,
             tempo_floor: None,
             tempo_ceiling: None,
             weights: crate::transition::Weights::DEFAULT,
         }
+    }
+
+    /// The rate the goal's duration is expressed in.
+    #[must_use]
+    pub const fn sample_rate(&self) -> SampleRate {
+        self.sample_rate
     }
 
     /// Sets how much each part of a transition counts.
@@ -348,14 +366,19 @@ mod tests {
         // A user typing 128 and then 120 means the same thing either way round,
         // and refusing the goal over it would be pedantry the interface has to
         // apologise for.
-        let goal = Goal::new(Frames::new(1000), EnergyShape::Arc).with_tempo_range(128.0, 120.0);
+        let goal = Goal::new(Frames::new(1000), SampleRate::HZ_44100, EnergyShape::Arc)
+            .with_tempo_range(128.0, 120.0);
         assert_eq!(goal.tempo_floor(), Some(120.0));
         assert_eq!(goal.tempo_ceiling(), Some(128.0));
     }
 
     #[test]
     fn target_energy_follows_the_shape_across_the_set() {
-        let goal = Goal::new(Frames::new(1_000_000), EnergyShape::Rising);
+        let goal = Goal::new(
+            Frames::new(1_000_000),
+            SampleRate::HZ_44100,
+            EnergyShape::Rising,
+        );
         assert!(goal.target_energy(Frames::ZERO) < goal.target_energy(Frames::new(500_000)));
         assert!(
             goal.target_energy(Frames::new(500_000)) < goal.target_energy(Frames::new(1_000_000))
@@ -364,7 +387,7 @@ mod tests {
 
     #[test]
     fn a_zero_length_goal_does_not_divide_by_zero() {
-        let goal = Goal::new(Frames::ZERO, EnergyShape::Arc);
+        let goal = Goal::new(Frames::ZERO, SampleRate::HZ_44100, EnergyShape::Arc);
         let value = goal.target_energy(Frames::new(100));
         assert!(value.is_finite());
     }

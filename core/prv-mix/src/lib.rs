@@ -58,7 +58,7 @@
 //!
 //! ```
 //! use prv_mix::{Candidate, EnergyShape, Goal, TrackId, plan};
-//! use prv_time::{Frames, Tempo};
+//! use prv_time::{Frames, SampleRate, Tempo};
 //!
 //! let five_minutes = Frames::new(44_100 * 300);
 //! let library: Vec<Candidate> = (0..8)
@@ -72,7 +72,7 @@
 //!     })
 //!     .collect();
 //!
-//! let goal = Goal::new(Frames::new(44_100 * 1800), EnergyShape::Rising);
+//! let goal = Goal::new(Frames::new(44_100 * 1800), SampleRate::HZ_44100, EnergyShape::Rising);
 //! let plans = plan(&library, &goal, 3).unwrap();
 //!
 //! assert!(!plans.is_empty());
@@ -83,6 +83,7 @@
 //! ```
 
 mod num;
+mod pacing;
 
 pub mod candidate;
 pub mod goal;

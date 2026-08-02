@@ -24,7 +24,7 @@
 use core::fmt;
 
 use prv_mix::{Creativity, EnergyShape, Goal};
-use prv_time::Frames;
+use prv_time::{Frames, SampleRate};
 
 /// What a user can ask the system to do.
 ///
@@ -148,7 +148,7 @@ impl Intent {
     ///
     /// Returns [`IntentError`] naming the field that was wrong, so that a
     /// clarifying question can be about the thing that needs clarifying.
-    pub fn to_goal(&self, sample_rate: u32) -> Result<Goal, IntentError> {
+    pub fn to_goal(&self, sample_rate: SampleRate) -> Result<Goal, IntentError> {
         let Self::PlanSet {
             minutes,
             shape,
@@ -184,8 +184,9 @@ impl Intent {
 
         let frames = i64::from(minutes)
             .saturating_mul(60)
-            .saturating_mul(i64::from(sample_rate));
-        let mut goal = Goal::new(Frames::new(frames), shape).with_creativity(creativity);
+            .saturating_mul(i64::from(sample_rate.hz()));
+        let mut goal =
+            Goal::new(Frames::new(frames), sample_rate, shape).with_creativity(creativity);
         if let (Some(floor), Some(ceiling)) = (tempo_floor, tempo_ceiling) {
             goal = goal.with_tempo_range(floor, ceiling);
         }
@@ -230,7 +231,7 @@ mod tests {
 
     use super::*;
 
-    const RATE: u32 = 48_000;
+    const RATE: SampleRate = SampleRate::HZ_48000;
 
     fn plan(minutes: u32, floor: Option<f32>, ceiling: Option<f32>) -> Intent {
         Intent::PlanSet {
@@ -355,9 +356,11 @@ mod tests {
     #[test]
     fn the_duration_survives_the_conversion_exactly() {
         let goal = plan(90, None, None).to_goal(RATE).expect("valid");
-        assert_eq!(goal.duration().get(), 90 * 60 * i64::from(RATE));
+        assert_eq!(goal.duration().get(), 90 * 60 * i64::from(RATE.hz()));
 
-        let at_other_rate = plan(90, None, None).to_goal(44_100).expect("valid");
+        let at_other_rate = plan(90, None, None)
+            .to_goal(SampleRate::HZ_44100)
+            .expect("valid");
         assert_eq!(at_other_rate.duration().get(), 90 * 60 * 44_100);
     }
 

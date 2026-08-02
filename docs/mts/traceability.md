@@ -115,7 +115,10 @@ did not have would be worse than no row at all.
 | Each analysis stage versioned independently | MP#20 | `prv-analysis::Stage::version` | `staleness_propagates_to_everything_downstream`, `the_dependency_order_has_no_cycles_and_matches_the_run_order` | **Verified** |
 | A stage that finds nothing says so | MP#25 | `prv-analysis::TrackProfile` | `a_stage_that_finds_nothing_is_absent_rather_than_uncertain`, `a_partial_analysis_is_a_success_not_a_failure` | **Verified** |
 | Transition scoring at import | MP#20 | — | — | Not started |
-| Mix planner | MP#3B, ADR-0006 | `prv-mix::plan` | `a_plan_reaches_the_requested_length_without_repeating_a_track`, `tracks_are_laid_end_to_end_without_gaps` | **Verified** |
+| Mix planner | MP#3B, ADR-0006 | `prv-mix::plan` | `a_plan_reaches_the_requested_length_without_repeating_a_track`, `a_set_moves_forward_by_one_handover_at_a_time` | **Verified** |
+| A plan is as long as it renders | MP#3B, MP#12 | `prv-mix::pacing` | `a_rendered_set_is_as_long_as_the_plan_said_it_would_be`, `the_planner_and_the_renderer_agree_about_where_a_record_hands_over` | **Verified** |
+| A set that falls short says so | MP#3B, MP#12 | `prv-mix::MixPlan::duration_error` | `a_short_set_is_reported_as_short_rather_than_as_a_perfect_match` | **Verified** |
+| A record hands over where the music offers it | MP#3B, MP#21 | `prv-mix::pacing::advance` | `a_record_hands_over_at_its_exit_point`, `an_exit_point_too_late_to_use_is_clamped_rather_than_trusted` | **Verified** |
 | Safety rules are guarantees, not tendencies | MP#3B | `prv-mix::transition::Rejection` | `a_clashing_key_is_not_a_low_score_but_no_candidate_at_all`, `no_plan_contains_a_move_that_violates_a_hard_constraint` | **Verified** |
 | Creativity widens soft limits only | MP#3B | `prv-mix::Creativity` | `creativity_unlocks_risky_harmony_and_nothing_beyond_it` | **Verified** |
 | The set follows the requested energy shape | MP#3B, MP#12 | `prv-mix::EnergyShape` | `the_set_follows_the_energy_shape_it_was_asked_for` | **Verified** |
@@ -142,6 +145,9 @@ did not have would be worse than no row at all.
 | Incremental synchronisation | MP#24 | `prv-project::operations_since` | `synchronisation_sends_only_what_the_other_side_lacks` | **Verified** |
 | Conflicts explained, never silently discarded | MP#24 | `prv-project::MergeReport` | `concurrent_edits_to_the_same_thing_are_reported`, `a_sequential_edit_is_not_a_conflict` | **Verified** |
 | Offline devices converge | MP#24 | `prv-project` | `two_devices_converge_on_the_same_state`, `convergence_holds_whatever_order_operations_arrive_in` | **Verified** |
+| History stays legible rather than being truncated | MP#24, MP#9 | `prv-sync::backup::thin` | `a_month_of_work_stays_legible_rather_than_becoming_a_wall`, `everything_from_the_last_hour_survives` | **Verified** |
+| A restore point the user named is never discarded | MP#9, MP#24 | `prv-sync::PointKind::Deliberate` | `a_point_somebody_named_is_never_discarded`, `the_named_points_alone_may_exceed_the_bound` | **Verified** |
+| Thinning is safe to run on every save | MP#24 | `prv-sync::backup::thin` | `thinning_twice_changes_nothing` | **Verified** |
 | The project refers to media, never contains it | MP#29, ADR-0003 | `prv-project::TrackRef` | structural — a placement holds a reference | **Verified** |
 | Offline-first | MP#1, MP#24 | ADR-0001, ADR-0006 | the core has no network dependency, enforced by rule 1 | **Enforced** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |

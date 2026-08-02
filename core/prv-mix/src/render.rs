@@ -385,7 +385,6 @@ pub fn render(
 
     let mut operations = Vec::new();
     let mut transitions = Vec::new();
-    let mut previous_end = Frames::ZERO;
     let mut previous_start = Frames::ZERO;
     let mut previous_candidate: Option<&Candidate> = None;
     let mut end_of_set = Frames::ZERO;
@@ -402,9 +401,14 @@ pub fn render(
         let overlap = overlap_for(planned, candidate, sample_rate);
 
         // Where this track begins. The first starts at zero; every other one
-        // begins where the *outgoing* track invites it to.
+        // begins where the *outgoing* track invites it to, by the same rule the
+        // planner used to decide how long the set would be.
         let start = previous_candidate.map_or(Frames::ZERO, |outgoing| {
-            transition_start(previous_start, previous_end, outgoing, overlap)
+            Frames::new(
+                previous_start
+                    .get()
+                    .saturating_add(crate::pacing::advance(outgoing, overlap).get()),
+            )
         });
 
         operations.push(OperationPayload::PlaceTrack {
@@ -449,9 +453,13 @@ pub fn render(
         }
 
         previous_start = start;
-        previous_end = Frames::new(start.get().saturating_add(candidate.duration().get()));
         previous_candidate = Some(candidate);
-        end_of_set = end_of_set.max(previous_end);
+        // A maximum rather than this track's end: a short record placed after a
+        // long one can finish before the long one does, and the set lasts until
+        // the last sound stops.
+        end_of_set = end_of_set.max(Frames::new(
+            start.get().saturating_add(candidate.duration().get()),
+        ));
     }
 
     Ok(RenderedMix {
@@ -461,60 +469,14 @@ pub fn render(
     })
 }
 
-/// Where the incoming track begins, given where the outgoing one invites it.
-///
-/// # Transitions land where the music offers them
-///
-/// The naive placement — overlap the last few bars of whatever is playing —
-/// mixes into the outgoing track's *ending*, which on a produced record is
-/// often a fade, a drum outro, or nothing at all. The analysis has already found
-/// where the record actually wants to be left: a quiet outro, or a breakdown.
-///
-/// So the transition begins at the outgoing track's best exit point when it has
-/// one, and falls back to the naive placement when it does not. The fallback is
-/// not a compromise — a track with no identified exit genuinely offers no better
-/// answer than "near the end" — but it is the difference between a transition
-/// that lands and one that merely happens on time.
-fn transition_start(
-    outgoing_start: Frames,
-    outgoing_end: Frames,
-    outgoing: &Candidate,
-    overlap: Frames,
-) -> Frames {
-    let fallback = outgoing_end.get().saturating_sub(overlap.get());
-
-    let chosen = outgoing.best_exit().map_or(fallback, |exit| {
-        outgoing_start.get().saturating_add(exit.position().get())
-    });
-
-    // Never before the outgoing track began, and never so late that the overlap
-    // would run past its end. An exit point from a stale analysis, or one on a
-    // track that has since been trimmed, must not push the incoming record into
-    // silence.
-    let latest = outgoing_end.get().saturating_sub(overlap.get());
-    Frames::new(chosen.clamp(outgoing_start.get(), latest.max(outgoing_start.get())))
-}
-
 /// How long the overlap into a track should be.
+///
+/// The opening track is not transitioned into, so it has no overlap. Everything
+/// else defers to [`crate::pacing::overlap`], which the planner uses too.
 fn overlap_for(planned: &PlannedTrack, candidate: &Candidate, sample_rate: SampleRate) -> Frames {
-    let Some(score) = planned.transition() else {
-        return Frames::ZERO;
-    };
-    let choice = choose_technique(score.components());
-    let beats = choice.technique.overlap_beats(score.total());
-
-    // The incoming track's tempo. The planner has already constrained the two
-    // to be within a few per cent of each other, so which of them sets the
-    // pulse changes the overlap by less than a beat — and using the incoming
-    // one keeps the overlap a whole number of *its* bars, which is the record
-    // whose arrangement the listener is arriving at.
-    let seconds_per_beat = crate::num::micros_to_seconds(candidate.tempo().micros_per_beat());
-    let frames = beats * seconds_per_beat * f64::from(sample_rate.hz());
-
-    // Never longer than the record it belongs to. An overlap longer than the
-    // incoming track would place it before the set began.
-    let limit = candidate.duration().get();
-    Frames::new(round_to_i64(frames).clamp(0, limit))
+    planned.transition().map_or(Frames::ZERO, |score| {
+        crate::pacing::overlap(score, candidate, sample_rate)
+    })
 }
 
 /// The automation a technique performs.
@@ -820,7 +782,11 @@ mod tests {
     }
 
     fn plan_for(candidates: &[Candidate]) -> MixPlan {
-        let goal = Goal::new(Frames::new(TRACK_FRAMES * 4), EnergyShape::Plateau);
+        let goal = Goal::new(
+            Frames::new(TRACK_FRAMES * 4),
+            SampleRate::HZ_44100,
+            EnergyShape::Plateau,
+        );
         crate::plan::plan(candidates, &goal, 1)
             .expect("a compatible library plans")
             .into_iter()
@@ -1177,7 +1143,11 @@ mod tests {
             track(0, PitchClass::A).with_point(MixPoint::new(exit_at, 0.1, MixPointRole::Exit));
         let candidates = vec![with_exit, track(1, PitchClass::E)];
 
-        let goal = Goal::new(Frames::new(TRACK_FRAMES * 2), EnergyShape::Plateau);
+        let goal = Goal::new(
+            Frames::new(TRACK_FRAMES * 2),
+            SampleRate::HZ_44100,
+            EnergyShape::Plateau,
+        );
         let plan = crate::plan::plan(&candidates, &goal, 1)
             .expect("plans")
             .into_iter()
@@ -1203,37 +1173,102 @@ mod tests {
     }
 
     #[test]
-    fn an_exit_point_too_late_to_use_is_clamped_rather_than_trusted() {
-        // An exit point from a stale analysis, or from a track that has since
-        // been trimmed, must not push the incoming record into silence.
+    fn a_rendered_set_is_as_long_as_the_plan_said_it_would_be() {
+        // The property that was violated, and the reason `pacing` exists.
+        //
+        // The planner laid tracks end to end while the renderer started each one
+        // at the outgoing track's exit point. With exit points a quarter of the
+        // way in — ordinary for analysed material — a forty-minute plan rendered
+        // as a thirteen-minute mix, and `duration_error` reported the set as a
+        // perfect match for what the user asked for.
         use crate::candidate::{MixPoint, MixPointRole};
 
-        let candidate = track(0, PitchClass::A);
-        let overlap = Frames::new(TRACK_FRAMES >> 2);
-        let start = transition_start(
-            Frames::ZERO,
-            Frames::new(TRACK_FRAMES),
-            &candidate.clone().with_point(MixPoint::new(
-                Frames::new(TRACK_FRAMES * 2),
-                0.1,
-                MixPointRole::Exit,
-            )),
-            overlap,
-        );
+        let candidates: Vec<Candidate> = (0..8)
+            .map(|index| {
+                let tonic = match index % 3 {
+                    0 => PitchClass::A,
+                    1 => PitchClass::E,
+                    _ => PitchClass::D,
+                };
+                // A quarter of the way in: early, but ordinary for a record
+                // with a long outro, and the case the planner used to lose.
+                track(index, tonic).with_point(MixPoint::new(
+                    Frames::new(TRACK_FRAMES >> 2),
+                    0.05,
+                    MixPointRole::Exit,
+                ))
+            })
+            .collect();
+
+        let goal = Goal::new(Frames::new(TRACK_FRAMES * 8), RATE, EnergyShape::Plateau);
+        let plan = crate::plan::plan(&candidates, &goal, 1)
+            .expect("plans")
+            .into_iter()
+            .next()
+            .expect("one plan");
+
+        let mut ids = PlacementIds::starting_at(1);
+        let mix = render(&plan, &candidates, RATE, &mut ids).expect("renders");
+
         assert_eq!(
-            start,
-            Frames::new(TRACK_FRAMES - (TRACK_FRAMES >> 2)),
-            "an impossible exit point was used rather than clamped"
+            plan.duration(),
+            mix.duration(),
+            "the plan and the mix disagree about how long the set is"
         );
 
-        // And one before the track began is clamped the other way.
-        let early = transition_start(
-            Frames::new(1000),
-            Frames::new(1000 + TRACK_FRAMES),
-            &candidate,
-            overlap,
+        // And every track sits where the plan said it would.
+        let placed: Vec<Frames> = mix
+            .operations()
+            .iter()
+            .filter_map(|operation| match operation {
+                OperationPayload::PlaceTrack { position, .. } => Some(*position),
+                _ => None,
+            })
+            .collect();
+        let planned: Vec<Frames> = plan.tracks().iter().map(PlannedTrack::start).collect();
+        assert_eq!(placed, planned, "a track was rendered somewhere else");
+    }
+
+    #[test]
+    fn a_short_set_is_reported_as_short_rather_than_as_a_perfect_match() {
+        // The half of the defect that made it dangerous rather than merely
+        // wrong. A planner that comes up short can say so and a user can ask for
+        // more; one that comes up short and reports success cannot be caught —
+        // and `duration_error` is also what the search sorts by, so the wrong
+        // number was choosing between plans as well as describing them.
+        use crate::candidate::{MixPoint, MixPointRole};
+
+        let candidates: Vec<Candidate> = (0..4)
+            .map(|index| {
+                let tonic = match index % 3 {
+                    0 => PitchClass::A,
+                    1 => PitchClass::E,
+                    _ => PitchClass::D,
+                };
+                // A quarter of the way in: early, but ordinary for a record
+                // with a long outro, and the case the planner used to lose.
+                track(index, tonic).with_point(MixPoint::new(
+                    Frames::new(TRACK_FRAMES >> 2),
+                    0.05,
+                    MixPointRole::Exit,
+                ))
+            })
+            .collect();
+
+        // Four records that each hand over a quarter of the way in cannot fill
+        // four records' worth of time.
+        let goal = Goal::new(Frames::new(TRACK_FRAMES * 4), RATE, EnergyShape::Plateau);
+        let plan = crate::plan::plan(&candidates, &goal, 1)
+            .expect("plans")
+            .into_iter()
+            .next()
+            .expect("one plan");
+
+        assert!(
+            plan.duration_error(&goal) > 0.25,
+            "a set less than half the requested length reported an error of {}",
+            plan.duration_error(&goal)
         );
-        assert!(early.get() >= 1000);
     }
 
     #[test]

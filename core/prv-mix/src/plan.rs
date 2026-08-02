@@ -34,7 +34,7 @@
 
 use std::collections::BTreeSet;
 
-use prv_time::Frames;
+use prv_time::{Frames, SampleRate};
 
 use crate::candidate::{Candidate, TrackId};
 use crate::goal::Goal;
@@ -220,7 +220,20 @@ pub enum PlanError {
 struct Beam {
     tracks: Vec<PlannedTrack>,
     used: BTreeSet<TrackId>,
-    elapsed: Frames,
+    /// Where the last track in the set begins.
+    ///
+    /// The next one begins one [`crate::pacing::advance`] after it, which is
+    /// not the same as one *duration* after it: a record hands over at its exit
+    /// point, and everything after that point overlaps with what follows.
+    last_start: Frames,
+    /// The furthest any track in the set reaches — the length of the set.
+    ///
+    /// Held separately from `last_start` because the two are genuinely
+    /// different questions and were once the same field, which is how the
+    /// planner came to believe a set was three times longer than it was. It is
+    /// a maximum rather than the last track's end because a short record after
+    /// a long one can finish before the long one does.
+    end: Frames,
     total_score: f64,
     transitions: usize,
 }
@@ -268,7 +281,7 @@ pub fn plan(
         let mut next: Vec<Beam> = Vec::new();
 
         for beam in &beams {
-            if beam.elapsed >= goal.duration() {
+            if beam.end >= goal.duration() {
                 finished.push(beam.clone());
                 continue;
             }
@@ -279,7 +292,24 @@ pub fn plan(
             let Some(from) = find(candidates, last.id) else {
                 continue;
             };
-            let target_energy = goal.target_energy(beam.elapsed);
+
+            // Where the incoming record will land, which is the position the
+            // energy curve should be asked about — a track is heard from where
+            // it starts, not from where the set currently ends.
+            //
+            // The overlap is left out of the estimate because it is not known
+            // yet: the overlap comes from the transition score, and the score is
+            // what this loop is about to compute. It enters `advance` only
+            // through a clamp that binds when a record's exit point is later
+            // than the record can support, so the estimate is short by at most
+            // one overlap — seconds, in a set measured in hours, and an energy
+            // curve does not turn in seconds.
+            let entry = Frames::new(
+                beam.last_start
+                    .get()
+                    .saturating_add(crate::pacing::advance(from, Frames::ZERO).get()),
+            );
+            let target_energy = goal.target_energy(entry);
 
             let mut extended = false;
             for candidate in candidates {
@@ -289,7 +319,13 @@ pub fn plan(
                 match crate::transition::score(from, candidate, goal, target_energy) {
                     Ok(transition) => {
                         extended = true;
-                        next.push(extend(beam, candidate, transition));
+                        next.push(extend(
+                            beam,
+                            from,
+                            candidate,
+                            transition,
+                            goal.sample_rate(),
+                        ));
                     }
                     Err(rejection) => last_rejection = Some(rejection),
                 }
@@ -305,7 +341,7 @@ pub fn plan(
 
         for beam in &next {
             let reached = if goal.duration().get() > 0 {
-                signed_to_f64(beam.elapsed.get()) / signed_to_f64(goal.duration().get())
+                signed_to_f64(beam.end.get()) / signed_to_f64(goal.duration().get())
             } else {
                 1.0
             };
@@ -333,7 +369,7 @@ pub fn plan(
         .into_iter()
         .map(|beam| MixPlan {
             score: narrow(beam.mean_score()),
-            duration: beam.elapsed,
+            duration: beam.end,
             tracks: beam.tracks,
         })
         .collect();
@@ -387,7 +423,8 @@ fn opening_beams(candidates: &[Candidate], goal: &Goal) -> Vec<Beam> {
                 transition: None,
             }],
             used,
-            elapsed: candidate.duration(),
+            last_start: Frames::ZERO,
+            end: candidate.duration(),
             // The opening track is scored on how well its energy suits the
             // start of the set, since there is no transition to judge.
             total_score: f64::from(opening_fit(candidate.energy(), opening_energy)),
@@ -418,10 +455,26 @@ fn opening_fit(energy: f32, target: f32) -> f32 {
 }
 
 /// Extends a beam with one more track.
-fn extend(beam: &Beam, candidate: &Candidate, transition: TransitionScore) -> Beam {
-    let mut tracks = beam.tracks.clone();
-    let start = beam.elapsed;
+///
+/// `from` is the record being left. It is needed because the set advances by
+/// *its* exit point, not by its length — the rule in [`crate::pacing`], which
+/// the renderer applies to the same plan.
+fn extend(
+    beam: &Beam,
+    from: &Candidate,
+    candidate: &Candidate,
+    transition: TransitionScore,
+    sample_rate: SampleRate,
+) -> Beam {
+    let overlap = crate::pacing::overlap(&transition, candidate, sample_rate);
+    let start = Frames::new(
+        beam.last_start
+            .get()
+            .saturating_add(crate::pacing::advance(from, overlap).get()),
+    );
     let score = f64::from(transition.total());
+
+    let mut tracks = beam.tracks.clone();
     tracks.push(PlannedTrack {
         id: candidate.id(),
         start,
@@ -435,9 +488,13 @@ fn extend(beam: &Beam, candidate: &Candidate, transition: TransitionScore) -> Be
     Beam {
         tracks,
         used,
-        elapsed: start
-            .checked_add(candidate.duration())
-            .unwrap_or(Frames::new(i64::MAX)),
+        last_start: start,
+        // A maximum rather than this track's end: a short record placed after a
+        // long one can finish before the long one does, and the set lasts until
+        // the last sound stops.
+        end: beam.end.max(Frames::new(
+            start.get().saturating_add(candidate.duration().get()),
+        )),
         total_score: beam.total_score + score,
         transitions: beam.transitions + 1,
     }
@@ -584,7 +641,11 @@ mod tests {
     }
 
     fn goal_for(tracks: i64, shape: EnergyShape) -> Goal {
-        Goal::new(Frames::new(TRACK_FRAMES * tracks), shape)
+        Goal::new(
+            Frames::new(TRACK_FRAMES * tracks),
+            SampleRate::HZ_44100,
+            shape,
+        )
     }
 
     #[test]
@@ -608,22 +669,88 @@ mod tests {
     }
 
     #[test]
-    fn tracks_are_laid_end_to_end_without_gaps() {
-        // The property a timeline is drawn from. A gap or an overlap here would
-        // put every subsequent track at the wrong time.
+    fn a_set_moves_forward_by_one_handover_at_a_time() {
+        // This test used to assert that each track started where the last one
+        // *ended*, which is the arithmetic the planner did and not the
+        // arithmetic the renderer did. It passed for six years' worth of
+        // material with no analysis attached and was wrong for everything else;
+        // see `pacing` for what that cost.
+        //
+        // What is actually true is weaker and correct: the set moves forward,
+        // each record overlaps the one before it rather than following it, and
+        // the set's length is the furthest any record reaches.
         let candidates = library(15);
         let goal = goal_for(6, EnergyShape::Arc);
         let plans = plan(&candidates, &goal, 1).expect("plans");
         let first = plans.first().expect("at least one plan");
 
-        let mut expected = Frames::ZERO;
+        let mut furthest = Frames::ZERO;
+        let mut previous: Option<&PlannedTrack> = None;
         for track in first.tracks() {
-            assert_eq!(track.start(), expected, "a gap or overlap in the timeline");
-            expected = expected
-                .checked_add(track.duration())
-                .expect("no overflow in a test-sized set");
+            if let Some(earlier) = previous {
+                assert!(
+                    track.start() > earlier.start(),
+                    "the set did not move forward"
+                );
+                let earlier_end = earlier
+                    .start()
+                    .checked_add(earlier.duration())
+                    .expect("no overflow in a test-sized set");
+                assert!(
+                    track.start() <= earlier_end,
+                    "a gap of silence between two records"
+                );
+            }
+            furthest = furthest.max(
+                track
+                    .start()
+                    .checked_add(track.duration())
+                    .expect("no overflow in a test-sized set"),
+            );
+            previous = Some(track);
         }
-        assert_eq!(first.duration(), expected);
+        assert_eq!(first.duration(), furthest);
+    }
+
+    #[test]
+    fn the_planner_and_the_renderer_agree_about_where_a_record_hands_over() {
+        // One rule, in one place, called from both. Stated here as well as in
+        // `render` because the planner is the side that was wrong, and a test
+        // that only lives with the renderer is a test somebody editing the
+        // search will not run into.
+        let candidates = library(10);
+        let goal = goal_for(5, EnergyShape::Plateau);
+        let first = plan(&candidates, &goal, 1)
+            .expect("plans")
+            .into_iter()
+            .next()
+            .expect("at least one plan");
+
+        for pair in first.tracks().windows(2) {
+            let (Some(earlier), Some(later)) = (pair.first(), pair.get(1)) else {
+                continue;
+            };
+            let Some(outgoing) = find(&candidates, earlier.id()) else {
+                continue;
+            };
+            let Some(incoming) = find(&candidates, later.id()) else {
+                continue;
+            };
+            let Some(score) = later.transition() else {
+                continue;
+            };
+            let overlap = crate::pacing::overlap(score, incoming, goal.sample_rate());
+            assert_eq!(
+                later.start(),
+                Frames::new(
+                    earlier
+                        .start()
+                        .get()
+                        .saturating_add(crate::pacing::advance(outgoing, overlap).get())
+                ),
+                "the plan placed a record somewhere the pacing rule would not"
+            );
+        }
     }
 
     #[test]

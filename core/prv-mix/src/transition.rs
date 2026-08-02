@@ -120,12 +120,12 @@ impl Weights {
     /// reach are noticed by everyone, a level jump by most, a slightly wrong
     /// energy by a DJ.
     pub const DEFAULT: Self = Self {
-        harmonic: 0.30,
-        tempo: 0.25,
-        energy: 0.20,
-        structure: 0.10,
-        level: 0.10,
-        vocal: 0.05,
+        harmonic: 0.05,
+        tempo: 0.10,
+        energy: 0.10,
+        structure: 0.20,
+        level: 0.25,
+        vocal: 0.30,
     };
 
     /// The smallest weight any component may be reduced to.
@@ -502,7 +502,7 @@ mod tests {
     use crate::goal::{EnergyShape, Goal};
     use prv_analysis::Confidence;
     use prv_harmony::{Key, PitchClass};
-    use prv_time::{Frames, Tempo};
+    use prv_time::{Frames, SampleRate, Tempo};
 
     fn candidate(id: u64, bpm: f64, energy: f32) -> Candidate {
         Candidate::new(
@@ -514,7 +514,11 @@ mod tests {
     }
 
     fn goal() -> Goal {
-        Goal::new(Frames::new(44_100 * 3600), EnergyShape::Arc)
+        Goal::new(
+            Frames::new(44_100 * 3600),
+            SampleRate::HZ_44100,
+            EnergyShape::Arc,
+        )
     }
 
     #[test]
