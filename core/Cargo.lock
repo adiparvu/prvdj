@@ -214,6 +214,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-notify"
+version = "0.1.0"
+dependencies = [
+ "prv-settings",
+]
+
+[[package]]
 name = "prv-plugin"
 version = "0.1.0"
 dependencies = [
@@ -241,6 +248,14 @@ version = "0.1.0"
 [[package]]
 name = "prv-settings"
 version = "0.1.0"
+
+[[package]]
+name = "prv-sync"
+version = "0.1.0"
+dependencies = [
+ "prv-project",
+ "prv-security",
+]
 
 [[package]]
 name = "prv-telemetry"

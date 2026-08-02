@@ -20,6 +20,8 @@ members = [
     "prv-plugin",
     "prv-ai",
     "prv-telemetry",
+    "prv-sync",
+    "prv-notify",
 ]
 
 [workspace.package]

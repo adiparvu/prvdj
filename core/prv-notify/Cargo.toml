@@ -1,0 +1,15 @@
+[package]
+name = "prv-notify"
+description = "What the product tells the user, when, and what it never interrupts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-settings = { path = "../prv-settings" }
+
+[lints]
+workspace = true

@@ -7,7 +7,7 @@ existential problem four years from now.
 
 ## Portable core
 
-**The core has no third-party runtime dependencies.** Twenty crates, zero.
+**The core has no third-party runtime dependencies.** Twenty-two crates, zero.
 Two of them depend on other core crates — `prv-plugin` on `prv-security`, so that
 authorisation has one decision point rather than two, and `prv-ai` on `prv-mix`,
 `prv-time` and `prv-security`, because an orchestrator that could not name the

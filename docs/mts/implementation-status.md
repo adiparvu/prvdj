@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 22._
+_Last updated: Sprint 23._
 
 ## Sprint 0 — Foundation
 
@@ -257,6 +257,17 @@ _Last updated: Sprint 22._
 | Withdrawal discards what was held | Completed | Verified | A cleared record is indistinguishable from one that never counted |
 | `prv-telemetry` diagnostics | Completed | Verified | A credential-bearing report is refused at every setting, checked first |
 | What the user is shown is what would be sent | Completed | Verified | One structure, rendered through the redaction module |
+
+## Sprint 23 — Synchronisation and notices
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-sync` state machine | Completed | Verified | Editing is allowed in every state; a pause is lifted only by the user |
+| `prv-sync` outbox | Completed | Verified | Refuses when full rather than discarding — the opposite of the audit log, for a stated reason |
+| Idempotent acknowledgement | Completed | Verified | Replaying a log on startup duplicates nothing; a lost reply is boring |
+| `prv-notify` interruption rule | Completed | Verified | Exactly three notices may reach someone on stage, named individually |
+| Notices are held, never dropped | Completed | Verified | What waits during a set is released afterwards, coalesced with a count |
+| A question is never merged away | Completed | Verified | Two permission requests are two decisions |
 
 ## Not started
 

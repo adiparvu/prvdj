@@ -227,7 +227,15 @@ did not have would be worse than no row at all.
 | Crash reporting and usage counting are separate agreements | MP#26 | `prv-telemetry::Counts::purpose_for` | `agreeing_to_crash_reports_is_not_agreeing_to_being_counted`, `every_event_belongs_to_exactly_one_agreement` | **Verified** |
 | A diagnostic carrying a credential is never sent | MP#26 | `prv-telemetry::Diagnostic::may_be_sent` | `a_report_containing_a_credential_never_goes_at_any_setting`, `a_secret_is_refused_before_anything_else_is_considered` | **Verified** |
 | What a user is shown is what would be sent | MP#26, MP#10 | `prv-telemetry::Counts::report` | `what_a_user_is_shown_is_what_would_be_sent`, `a_report_can_hold_nothing_a_person_could_be_recognised_by` | **Verified** |
-| Cloud and UI | MP#24, MP#17 | — | — | Not started |
+| Editing works with no network | MP#24 | `prv-sync::SyncState::editing_is_allowed` | `there_is_no_state_in_which_the_user_cannot_edit`, `six_hours_offline_then_a_reconnection` | **Verified** |
+| Nothing the user did is ever dropped in transit | MP#9, MP#24 | `prv-sync::Outbox` | `a_full_outbox_refuses_rather_than_forgetting`, `edits_from_two_devices_do_not_collide` | **Verified** |
+| Re-sending after a lost reply is safe | MP#24 | `prv-sync::Outbox::acknowledge` | `acknowledging_twice_is_a_no_op`, `replaying_a_log_on_startup_does_not_duplicate_anything` | **Verified** |
+| A pause is honoured exactly | MP#24, MP#26 | `prv-sync::advance` | `a_pause_is_honoured_exactly_and_only_the_user_lifts_it` | **Verified** |
+| A conflict blocks transfer and not the person | MP#24, MP#9 | `prv-sync::SyncState::Conflicted` | `a_conflict_stops_transfer_and_nothing_else`, `a_conflict_pauses_the_transfer_and_not_the_person` | **Verified** |
+| Only the sound coming out now interrupts a performance | MP#8, MP#19, MP#24 | `prv-notify::Notice::concerns_the_sound_right_now` | `only_the_sound_coming_out_right_now_reaches_someone_on_stage`, `exactly_three_things_may_interrupt_a_set` | **Verified** |
+| A withheld notice is held, never discarded | MP#9, MP#24 | `prv-notify::Notifications::release` | `nothing_withheld_during_a_set_is_thrown_away` | **Verified** |
+| Repetition is summarised with a count | MP#10, MP#24 | `prv-notify::Pending::occurrences` | `forty_analysed_tracks_are_one_notice_with_a_count`, `a_question_is_never_merged_away` | **Verified** |
+| Cloud transport and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself
 

@@ -1,0 +1,16 @@
+[package]
+name = "prv-sync"
+description = "Synchronisation state and the outbox — offline is the normal case, and nothing is ever dropped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-project = { path = "../prv-project" }
+prv-security = { path = "../prv-security" }
+
+[lints]
+workspace = true
