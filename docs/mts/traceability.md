@@ -32,6 +32,7 @@ did not have would be worse than no row at all.
 | Every architectural decision recorded | MP#14, MP#31 | `docs/adr/` | rules 5 and 6 check the index resolves and every record has a review date | **Enforced** |
 | No hardcoded visual values | MP#16 | `design/tokens/` | `tokengen --check` gate | **Enforced** |
 | Dependencies point inward only | MP#4, MP#7 | crate graph | the core cannot name a UI framework — it does not exist in its language | **Enforced** |
+| No engine knows what tier it is running under | MP#4, MP#29 | `prv-entitlements` isolated | `tools/check-architecture.sh` rule 7, exercised against a deliberate violation | **Enforced** |
 
 ## Musical time and transport
 
@@ -172,6 +173,11 @@ did not have would be worse than no row at all.
 | Nothing is normalised silently | MP#3A | `prv-export::ExportReport::gain_db` | `silence_is_reported_rather_than_normalised`, `an_archive_is_never_gained_and_only_has_to_not_be_clipping` | **Verified** |
 | Inter-sample clipping is caught before delivery | MP#3A, MP#3C | `prv-export::DeliveryTarget::true_peak_ceiling_dbtp` | `every_target_that_normalises_has_a_ceiling_below_full_scale` | **Verified** |
 | A mix records what went into it | MP#3C, MP#29 | `prv-export::Manifest` | `a_missing_track_is_recorded_rather_than_omitted`, `reproducing_requires_the_analysis_versions_to_match_too` | **Verified** |
+| Essential functionality is never artificially restricted | MP#29 | `prv-entitlements::Feature::is_essential` | `every_tier_can_reach_the_users_own_work`, `getting_work_out_is_never_charged_for` | **Verified** |
+| An expired licence is not a locked door | MP#9, MP#29 | `prv-entitlements::Licence::expired` | `an_expired_licence_is_the_free_tier_and_not_a_locked_door` | **Verified** |
+| A higher tier never grants less | MP#29 | `prv-entitlements::Licence::check` | `tiers_are_cumulative` | **Verified** |
+| A denial says what would grant the feature | MP#10, MP#29 | `prv-entitlements::Denial` | `a_denial_says_what_would_grant_the_feature` | **Verified** |
+| A privacy choice is not answered with a sales prompt | MP#26, MP#29 | `prv-entitlements::Denial::DisabledByUser` | `a_privacy_choice_is_not_answered_with_a_sales_prompt` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

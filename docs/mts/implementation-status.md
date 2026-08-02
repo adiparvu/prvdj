@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 15._
+_Last updated: Sprint 16._
 
 ## Sprint 0 — Foundation
 
@@ -182,6 +182,16 @@ _Last updated: Sprint 15._
 | `prv-export` compliance report | Completed | Verified | Computed before the render; "needs gain" and "would clip" are different verdicts |
 | Dither derived rather than configured | Completed | Verified | Right in all four combinations of depth and format |
 | `prv-export` provenance manifest | Completed | Verified | Licensing, reproducibility and integrity from one structure |
+
+## Sprint 16 — What a licence may and may not withhold
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-entitlements` tiers and features | Completed | Verified | Ordered tiers; a feature is gated by "at least this tier", never by a list |
+| Essential features | Completed | Verified | Playing, browsing, editing and exporting your own work, at every tier, checked over the whole matrix |
+| Expiry is the free tier, not a locked door | Completed | Verified | Essential features survive; the user's own privacy choices survive with them |
+| Denials that explain | Completed | Verified | A tier denial names the tier; a user's own choice is not answered with a sales prompt |
+| Architecture rule 7 — no engine depends on entitlements | Completed | Verified | Enforced by `tools/check-architecture.sh`; the rule was tested against a deliberate violation |
 
 ## Not started
 

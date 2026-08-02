@@ -162,6 +162,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-entitlements"
+version = "0.1.0"
+
+[[package]]
 name = "prv-export"
 version = "0.1.0"
 dependencies = [

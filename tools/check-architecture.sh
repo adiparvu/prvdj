@@ -151,6 +151,36 @@ else
     pass "every decision record carries a review date"
 fi
 
+# ---------------------------------------------------------------------------
+# Rule 7 — no engine depends on entitlements.
+#
+# Master Prompt #29 promises that essential functionality is never artificially
+# restricted, and that the product behaves identically at every tier. A promise
+# like that decays: it survives the first release, and then somebody adds one
+# tier check inside the mixer because it was the convenient place, and a year
+# later nobody can say what the free tier does without reading the DSP.
+#
+# So the promise is structural. The engines cannot consult a licence because
+# they cannot name the crate that holds one; entitlements are checked at the
+# feature boundary, above all of them. This is the rule that keeps it true.
+# ---------------------------------------------------------------------------
+engine_crates="prv-time prv-rt prv-harmony prv-transport prv-dsp prv-waveform \
+prv-project prv-library prv-analysis prv-mix prv-timeline prv-learning prv-export"
+tainted=""
+for engine in $engine_crates; do
+    manifest="core/${engine}/Cargo.toml"
+    [ -e "$manifest" ] || continue
+    if grep -q 'prv-entitlements' "$manifest"; then
+        tainted="${tainted}${manifest}\n"
+    fi
+done
+if [ -n "$tainted" ]; then
+    fail "no engine may depend on entitlements (Master Prompt #29):"
+    printf '%b' "$tainted" >&2
+else
+    pass "no engine depends on entitlements"
+fi
+
 printf '\n'
 if [ "$failures" -gt 0 ]; then
     printf '%d architecture rule(s) violated.\n' "$failures" >&2
