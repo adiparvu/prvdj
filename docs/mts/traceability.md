@@ -208,6 +208,14 @@ did not have would be worse than no row at all.
 | Plugin permissions are revocable and revocation is immediate | MP#23 | `prv-plugin::Registry::withdraw`, `lifecycle::advance` | `withdrawing_a_permission_takes_effect_on_the_next_question`, `revocation_applies_everywhere_and_is_final` | **Verified** |
 | Declared plugin latency is bounded and compensated | MP#18, MP#23 | `prv-plugin::Manifest::MAX_LATENCY_FRAMES` | `latency_beyond_what_the_graph_will_compensate_is_refused`, `a_plugin_off_the_audio_path_declares_no_latency_whatever_it_says` | **Verified** |
 | The certified tier is not self-assignable | MP#23, ADR-0005 | `prv-plugin::ManifestError::TierNotSelfAssignable` | `the_certified_tier_cannot_be_claimed_by_a_file` | **Verified** |
+| Musical decisions are computed, never generated | ADR-0006, MP#6 | `prv-ai::AgentKind::decides_musically` | `no_musical_decision_is_ever_made_on_a_server`, `agreeing_to_the_cloud_changes_how_it_reads_and_writes_and_not_what_it_decides` | **Verified** |
+| Losing the cloud costs fluency, never capability | ADR-0006, MP#26 | `prv-ai::Capability::available_agent` | `withdrawing_every_agreement_leaves_every_essential_capability_reachable`, `a_two_hour_set_is_planned_with_nothing_agreed_to_and_nothing_sent` | **Verified** |
+| A model's output is bounded before the system acts on it | ADR-0006, MP#25 | `prv-ai::Intent::to_goal` | `nothing_a_model_can_emit_becomes_a_goal_the_planner_would_not_accept` | **Verified** |
+| The orchestrator's order can be explained | MP#19 | `prv-ai::TaskPlan::schedule` | `the_order_is_the_same_on_every_run`, `a_dependency_always_comes_first` | **Verified** |
+| A cycle in a plan is refused, not broken | MP#19 | `prv-ai::TaskError::Cyclic` | `a_cycle_is_refused_rather_than_broken`, `a_task_that_depends_on_itself_is_a_cycle_like_any_other` | **Verified** |
+| A task never runs on an input that was not produced | MP#19, MP#25 | `prv-ai::Run::record` | `a_failure_skips_everything_downstream_of_it_transitively`, `a_failure_early_on_never_produces_a_confident_answer_late_on` | **Verified** |
+| The user is asked for agreements once, in advance | MP#26, MP#10 | `prv-ai::TaskPlan::missing_agreements` | `what_a_plan_needs_is_known_before_anything_runs`, `a_schedule_says_in_advance_whether_anything_leaves_the_device` | **Verified** |
+| A modest machine is not mistaken for a withheld permission | MP#8, MP#26 | `prv-ai::Device` | `a_modest_machine_falls_back_to_the_cloud_and_only_with_an_agreement` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

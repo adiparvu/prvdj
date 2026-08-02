@@ -7,9 +7,11 @@ existential problem four years from now.
 
 ## Portable core
 
-**The core has no third-party runtime dependencies.** Eighteen crates, zero.
-Two of them depend on another core crate — `prv-plugin` on `prv-security`, so that
-authorisation has one decision point rather than two — and nothing in the core
+**The core has no third-party runtime dependencies.** Nineteen crates, zero.
+Two of them depend on other core crates — `prv-plugin` on `prv-security`, so that
+authorisation has one decision point rather than two, and `prv-ai` on `prv-mix`,
+`prv-time` and `prv-security`, because an orchestrator that could not name the
+planner's own goal would have to describe it in strings. Nothing in the core
 depends on anything outside it.
 
 This is a deliberate position, not an accident of being early. Every crate on the

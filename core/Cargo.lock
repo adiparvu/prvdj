@@ -145,6 +145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-ai"
+version = "0.1.0"
+dependencies = [
+ "prv-mix",
+ "prv-security",
+ "prv-time",
+]
+
+[[package]]
 name = "prv-analysis"
 version = "0.1.0"
 dependencies = [

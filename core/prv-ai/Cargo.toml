@@ -1,0 +1,17 @@
+[package]
+name = "prv-ai"
+description = "Intent, agents and task orchestration — the shell around a deterministic planner."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-time = { path = "../prv-time" }
+prv-mix = { path = "../prv-mix" }
+prv-security = { path = "../prv-security" }
+
+[lints]
+workspace = true

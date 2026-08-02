@@ -18,6 +18,7 @@ members = [
     "prv-security",
     "prv-settings",
     "prv-plugin",
+    "prv-ai",
 ]
 
 [workspace.package]

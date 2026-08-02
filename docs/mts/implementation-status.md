@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 19._
+_Last updated: Sprint 20._
 
 ## Sprint 0 — Foundation
 
@@ -225,6 +225,17 @@ _Last updated: Sprint 19._
 | `prv-plugin` watchdog | Completed | Verified | Two rules; allocation-free, total, safe to call from the callback |
 | `prv-plugin` registry | Completed | Verified | Granted is not requested; a bypass does not move the music in time |
 | Revocation | Completed | Verified | Applies from any state, is terminal, and takes effect on the next question |
+
+## Sprint 20 — The orchestrator
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ai` intent boundary | Completed | Verified | Every value bounded once, at the edge; adversarial sweep over durations and tempos |
+| `prv-ai` agent registry | Completed | Verified | No musical decision runs on a server; every cloud agent names its agreement |
+| Device capability model | Completed | Verified | "Agreed to" and "can be done here" are separate questions |
+| `prv-ai` task graph | Completed | Verified | Deterministic order; a cycle is refused rather than broken |
+| Agreements known before anything runs | Completed | Verified | The user is asked once, up front, for exactly what is needed |
+| `prv-ai` run record | Completed | Verified | A failed step skips its dependents transitively, each naming its cause |
 
 ## Not started
 
