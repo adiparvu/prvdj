@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 23._
+_Last updated: Sprint 24._
 
 ## Sprint 0 — Foundation
 
@@ -268,6 +268,16 @@ _Last updated: Sprint 23._
 | `prv-notify` interruption rule | Completed | Verified | Exactly three notices may reach someone on stage, named individually |
 | Notices are held, never dropped | Completed | Verified | What waits during a set is released afterwards, coalesced with a count |
 | A question is never merged away | Completed | Verified | Two permission requests are two decisions |
+
+## Sprint 24 — The master limiter
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-dsp::Limiter` | Completed | Verified | Nothing leaves above the ceiling, to within a few units in the last place |
+| True-peak detection on the signal path | Completed | Verified | Acts on a signal whose samples are under the ceiling and whose reconstruction is not |
+| Straight-line gain, never a step | Completed | Verified | Bounded by the steepest line to silence over the delay |
+| Delay reported for compensation | Completed | Verified | Look-ahead plus the detector's own delay, both counted |
+| Allocation gate extended | Completed | Verified | The limiter renders 175 000 blocks in a chain with zero allocations |
 
 ## Not started
 

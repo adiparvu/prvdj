@@ -66,7 +66,10 @@ did not have would be worse than no row at all.
 | Per-block cost bounded | MP#31 | `prv-dsp::Chain` | `the_chain_length_is_bounded` | **Verified** |
 | Wait-free state publication to the interface | MS#002, MS#003 | `prv-rt::triple_buffer` | `values_are_never_torn_under_concurrency` | **Verified** |
 | Time stretching, key lock | MP#3A | — | — | Not started |
-| Master bus, LUFS, true peak | MP#3A, MP#3C | — | — | Not started |
+| Master limiter, true peak | MP#3A, MP#3C | `prv-dsp::Limiter` | `nothing_leaves_above_the_ceiling`, `it_limits_the_peak_a_converter_would_produce_not_the_sample_peak` | **Verified** |
+| The limiter is transparent below its ceiling | MP#15 | `prv-dsp::Limiter` | `a_signal_already_under_the_ceiling_comes_out_unchanged` | **Verified** |
+| Gain reduction never steps | MP#18 | `prv-dsp::Limiter` | `the_gain_moves_in_straight_lines_and_never_steps`, `the_gain_is_already_down_when_the_peak_arrives` | **Verified** |
+| Master bus loudness metering | MP#3A, MP#3C | `prv-analysis::loudness` | measured offline; a realtime meter is not built | Partial |
 | Recording and export | MP#3A | — | — | Not started |
 
 ## Musical intelligence

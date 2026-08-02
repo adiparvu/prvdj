@@ -43,6 +43,7 @@ mod chain;
 mod eq;
 mod filter;
 mod gain;
+mod limiter;
 mod processor;
 
 pub use biquad::{Biquad, BiquadCoefficients};
@@ -50,4 +51,5 @@ pub use chain::Chain;
 pub use eq::{ThreeBandEq, DEFAULT_HIGH_CROSSOVER_HZ, DEFAULT_LOW_CROSSOVER_HZ};
 pub use filter::DjFilter;
 pub use gain::Gain;
+pub use limiter::Limiter;
 pub use processor::{PrepareConfig, ProcessContext, Processor};

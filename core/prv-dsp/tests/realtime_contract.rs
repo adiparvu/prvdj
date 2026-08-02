@@ -33,7 +33,9 @@ use prv_rt::AudioBuffer;
 use prv_time::{SampleRate, Tempo, TimeSignature};
 use prv_transport::{Transport, TransportEvent};
 
-use prv_dsp::{Chain, DjFilter, Gain, PrepareConfig, ProcessContext, Processor, ThreeBandEq};
+use prv_dsp::{
+    Chain, DjFilter, Gain, Limiter, PrepareConfig, ProcessContext, Processor, ThreeBandEq,
+};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator<std::alloc::System> =
@@ -143,6 +145,12 @@ fn dispatching_through_a_chain_adds_no_allocation() {
         .expect("chain has room");
     chain
         .push(Box::new(DjFilter::new()))
+        .expect("chain has room");
+    // The limiter last, where it sits on a master. It is the processor with the
+    // most state — two rings per channel and a polyphase filter bank — so if
+    // anything in this crate were going to allocate mid-render, it would.
+    chain
+        .push(Box::new(Limiter::new()))
         .expect("chain has room");
     chain.prepare(&config);
 
