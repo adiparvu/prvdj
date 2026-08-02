@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Sandboxed. Not optional: a DJ application reads a user's whole music
+         library, and the least it can do is be unable to reach anything else. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Files the user chose, and only those. Read-write so a project can be
+         saved back beside the audio it refers to. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Security-scoped bookmarks, so a library survives a restart without
+         asking the user to re-grant every folder every launch. -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Audio output. -->
+    <key>com.apple.security.device.audio-input</key>
+    <false/>
+
+    <!-- No network entitlement.
+
+         This is the important line, and it is deliberately absent rather than
+         set false: without com.apple.security.network.client the sandbox makes
+         an outbound connection impossible, so "nothing leaves the device" is
+         enforced by the operating system rather than by our own code being
+         correct.
+
+         Cloud sync, when it ships, adds this entitlement in the same commit
+         that adds the consent screen — and not before. -->
+</dict>
+</plist>

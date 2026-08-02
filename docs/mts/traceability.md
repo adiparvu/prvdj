@@ -182,6 +182,8 @@ did not have would be worse than no row at all.
 | Nothing held back is lost | MP#8 | `prv_experience_release` | `what_was_held_back_comes_out_afterwards_rather_than_being_dropped` | **Verified** |
 | A repeated fault is one notice with a count | MP#8, MP#11 | `Pending::occurrences` | `six_of_the_same_fault_is_one_notice_that_happened_six_times`, `releaseAfterwards` | **Verified** |
 | A notice about the sound may still interrupt | MP#11 | `Notice::concerns_the_sound_right_now` | `a_notice_about_the_sound_right_now_may_still_interrupt` | **Verified** |
+| Nothing leaves the device, enforced below our own code | MP#26 | `PRVStudio.entitlements` | architecture rule 10, verified against a deliberate grant | **Enforced** |
+| The whole stack links into a running application | MP#27 | `PRVStudio` | `swift run PRVStudio` in continuous integration | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

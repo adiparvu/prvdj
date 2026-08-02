@@ -277,6 +277,36 @@ fi
 
 printf '\n'
 # ---------------------------------------------------------------------------
+# Rule 10 — the sandbox cannot reach the network.
+#
+# Master Prompt #26 promises that nothing leaves the device without an explicit
+# agreement. Our own code honours that (`prv-security` decides, and the boundary
+# reports it), but code can have bugs and an entitlement cannot: without
+# `com.apple.security.network.client` the operating system makes an outbound
+# connection impossible.
+#
+# So the absence of that key is a guarantee, and this rule is what keeps it
+# absent. Cloud sync adds it in the same commit as the consent screen it depends
+# on, and that commit changes this rule deliberately rather than quietly.
+# ---------------------------------------------------------------------------
+entitlements="apple/Resources/PRVStudio.entitlements"
+if [ ! -f "$entitlements" ]; then
+    fail "the entitlements file is missing: $entitlements"
+# XML comments are stripped before matching, for the same reason Rule 2 strips
+# `//`: this file *explains* why the network key is absent, and a scanner that
+# also read the prose would make documenting the guarantee into a build failure.
+# That would train authors to stop explaining it, which is the opposite of what
+# the rule is for.
+elif sed 's/<!--.*-->//; /<!--/,/-->/d' "$entitlements" \
+    | grep -q "com.apple.security.network.client"; then
+    fail "$entitlements grants network access; MP#26's promise is then only as good as our code"
+elif ! grep -q "com.apple.security.app-sandbox" "$entitlements"; then
+    fail "$entitlements does not enable the sandbox"
+else
+    pass "the sandbox cannot reach the network"
+fi
+
+# ---------------------------------------------------------------------------
 # Rule 9 — the generated bindings match the boundary that generated them.
 #
 # The architecture overview requires bindings to be generated rather than

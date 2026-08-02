@@ -515,6 +515,28 @@ plugin loader with no plugin host to load into would be a guess about a shape
 nobody has built against, and ADR-0005 is explicit that the isolation tier
 decides the interface. They are named here rather than quietly omitted.
 
+### Sprint 38 — the application
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `PRVStudio` executable | Completed | **Verified on Linux** | Starts, brings the stack up, reports what it found, exits zero |
+| `Studio` — the wiring object | Completed | **Verified on Linux** | Owns session, policy and experience; decides nothing itself |
+| `Info.plist` and entitlements | Completed | Verified | Structure validated; the network key's absence is a build rule |
+| Architecture rule 10 — the sandbox has no network | Completed | **Enforced** | Verified against a deliberate grant |
+| The macOS CI job | Completed | Enabled | Was `if: false`, which reports nothing and looks like passing |
+
+**A library that compiles and a binary that starts are different claims.** Every
+other test here exercises a module; `swift run PRVStudio` exercises the product,
+and it now runs in continuous integration.
+
+The entitlements file has no `com.apple.security.network.client`, and its absence
+is deliberate rather than an omission. Master Prompt #26 promises nothing leaves
+the device without agreement; our code honours that, and code can have bugs. An
+entitlement cannot. Without that key the operating system makes an outbound
+connection *impossible*, so the promise is enforced below us. Rule 10 keeps it
+absent, and cloud sync will add it in the same commit as the consent screen it
+depends on — deliberately, not quietly.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

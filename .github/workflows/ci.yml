@@ -186,6 +186,13 @@ jobs:
       - name: Swift packages build and their tests pass
         run: swift test --package-path apple
 
+      # A library that compiles and a binary that starts are different claims.
+      # This makes the second one: the whole stack — Rust core, C boundary,
+      # PRVCore, PRVKit, PRVUI — linked into an executable that comes up and
+      # reports what it found. It exits non-zero if it cannot.
+      - name: The application starts
+        run: swift run --package-path apple PRVStudio
+
   apple:
     name: Apple platforms (macOS)
     # Requires a macOS runner with Xcode. Until one is available this job does
@@ -203,12 +210,29 @@ jobs:
     # views. They are deliberately the thinnest code in the repository: every
     # decision they might have made lives in a model that is already tested.
     runs-on: macos-14
-    if: false
+    # Enabled. It will fail on a runner without Xcode, which is the honest
+    # signal — a job disabled with `if: false` reports nothing and looks the
+    # same as one that passes.
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
-      - name: Build Swift packages
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      # The Swift package links this, so it has to exist before anything below.
+      - name: Build the boundary
+        run: cargo build -p prv-ffi --manifest-path core/Cargo.toml
+
+      # The four adapters and the SwiftUI views. Everything else in these
+      # targets is already verified on Linux by the `bridge` job; what this adds
+      # is the code behind `#if canImport`, which no other runner can reach.
+      - name: Build Swift packages with the Apple frameworks present
         run: swift build --package-path apple
+
       - name: Test Swift packages
         run: swift test --package-path apple
+
+      - name: The application builds as an app
+        run: swift build --package-path apple --product PRVStudio

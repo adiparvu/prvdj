@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>PRV AI DJ Studio</string>
+    <key>CFBundleIdentifier</key>
+    <string>studio.prv.aidj</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Why the application wants a file.
+
+         Shown to the user verbatim by the system, so it says what is actually
+         done with the access rather than what would sound reassuring. The
+         application reads audio; it never uploads it without a separate,
+         explicit agreement recorded through PrvPolicy. -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>PRV reads music you choose so it can analyse and mix it. Nothing is sent anywhere unless you separately agree to it.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>PRV reads music you choose so it can analyse and mix it. Nothing is sent anywhere unless you separately agree to it.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>PRV reads music you choose so it can analyse and mix it. Nothing is sent anywhere unless you separately agree to it.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>PRV reads music from external drives so a library on a USB disk works the same as one on the internal drive.</string>
+
+    <!-- No microphone entry, deliberately.
+
+         The application does not record. An unused usage description is a
+         permission somebody grants for nothing, and the absence is a stronger
+         statement than any wording would be. -->
+
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>studio.prv.aidj.project</string>
+            <key>UTTypeDescription</key>
+            <string>PRV Project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>prvproj</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>

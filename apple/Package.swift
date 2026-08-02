@@ -32,6 +32,7 @@ let package = Package(
         .library(name: "PRVCore", targets: ["PRVCore"]),
         .library(name: "PRVKit", targets: ["PRVKit"]),
         .library(name: "PRVUI", targets: ["PRVUI"]),
+        .executable(name: "PRVStudio", targets: ["PRVStudio"]),
     ],
     targets: [
         // The generated C boundary. `path` points at what `bridgegen` produces,
@@ -59,6 +60,18 @@ let package = Package(
 
         .target(name: "PRVKit", dependencies: ["PRVCore"], path: "Sources/PRVKit"),
         .target(name: "PRVUI", dependencies: ["PRVCore", "PRVKit"], path: "Sources/PRVUI"),
+
+        // The application.
+        //
+        // On Apple platforms a SwiftUI app; everywhere else a headless start
+        // that brings the same stack up and reports what it found. A library
+        // that compiles and a binary that starts are different claims, and this
+        // is the only target that makes the second one.
+        .executableTarget(
+            name: "PRVStudio",
+            dependencies: ["PRVCore", "PRVKit", "PRVUI"],
+            path: "Sources/PRVStudio"
+        ),
 
         .testTarget(
             name: "PRVCoreTests",

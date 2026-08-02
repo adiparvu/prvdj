@@ -32,10 +32,15 @@ core — all tested. An adapter above can be wrong about a pixel or an audio uni
 flag. It cannot be wrong about the product, because it does not know anything
 about the product.
 
+**The macOS job is now enabled rather than disabled.** It was `if: false`, which
+reports nothing and looks identical to a job that passes. It now runs and will
+fail on a runner without Xcode — which is the honest signal, and the thing that
+turns "we have not checked this" into a red mark somebody has to act on.
+
 **Consequence.** Everything in `core/`, the generated bindings, `PRVCore`,
-`PRVKit`'s ports and session, and every `PRVUI` model are reported as *verified*.
-The four adapters and the views are *authored*. The macOS job exists in the
-workflow and is disabled.
+`PRVKit`'s ports and session, every `PRVUI` model, and *the application starting*
+are reported as *verified*. The four adapters and the views are *authored* until
+that job runs green somewhere.
 
 Reporting authored code as working would violate Master Prompt #13 and #27, so
 the distinction is maintained explicitly in
