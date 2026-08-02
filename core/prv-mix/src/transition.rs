@@ -117,15 +117,28 @@ impl Weights {
     /// **Provisional**, like every weight in this system, and calibrated in
     /// Phase 3 as ADR-0006 schedules. The ordering they induce reflects what
     /// breaks a mix most visibly: a harmonic clash and a tempo the deck cannot
-    /// reach are noticed by everyone, a level jump by most, a slightly wrong
-    /// energy by a DJ.
+    /// reach are noticed by everyone, an energy that does not suit the room by
+    /// most, a slightly wrong level by a DJ.
+    ///
+    /// # The *values* are provisional; the *ordering* is not
+    ///
+    /// These six numbers were once reversed — harmonic dropped to the least
+    /// important thing about a transition, vocal collision raised to the most —
+    /// and the entire suite passed. Nothing in the crate asserted what the
+    /// constant was *for*, so a planner that would rather clash two keys than
+    /// overlap two vocals looked exactly as correct as one that would not.
+    ///
+    /// Calibration will change these numbers. It will not change which of them
+    /// is largest, and
+    /// [`the_ordering_of_the_default_weights_is_not_an_accident`](self#tests)
+    /// is what says so.
     pub const DEFAULT: Self = Self {
-        harmonic: 0.05,
-        tempo: 0.10,
-        energy: 0.10,
-        structure: 0.20,
-        level: 0.25,
-        vocal: 0.30,
+        harmonic: 0.30,
+        tempo: 0.25,
+        energy: 0.20,
+        structure: 0.10,
+        level: 0.10,
+        vocal: 0.05,
     };
 
     /// The smallest weight any component may be reduced to.
@@ -728,6 +741,107 @@ mod tests {
             vocal: 0.0,
         };
         assert_eq!(empty.total(), 0.0);
+    }
+
+    #[test]
+    fn the_ordering_of_the_default_weights_is_not_an_accident() {
+        // These six numbers were once reversed and the whole suite passed. That
+        // is the gap this test exists to close.
+        //
+        // It deliberately pins the *ordering* and not the values. Phase 3
+        // calibration will move all six, and a test that pinned them would be
+        // deleted the first time it got in the way — which is how a constant
+        // ends up with no test at all. What calibration must never do is decide
+        // that a vocal overlap matters more than a key clash.
+        let weights = Weights::DEFAULT;
+
+        assert!(
+            weights.harmonic > weights.tempo,
+            "harmonic {} is no longer the most important thing about a transition",
+            weights.harmonic
+        );
+        assert!(
+            weights.tempo > weights.energy,
+            "a tempo the deck cannot reach stopped outranking an imperfect energy fit"
+        );
+        assert!(
+            weights.energy > weights.structure,
+            "energy fit stopped outranking having somewhere convenient to mix"
+        );
+        assert!(
+            weights.structure >= weights.level,
+            "structure fell below level"
+        );
+        assert!(
+            weights.level > weights.vocal,
+            "vocal collision risk — the softest of the six — outranks a level jump"
+        );
+
+        // And the strongest single statement: the thing MP#3B is built around
+        // is worth more than everything the listener is least likely to notice.
+        assert!(
+            weights.harmonic > weights.level + weights.vocal,
+            "harmonic compatibility no longer dominates the two softest components"
+        );
+
+        // The weights are a distribution, so `total()` is what divides the
+        // weighted sum. A set that did not sum to one would silently rescale
+        // every score in the crate.
+        assert!(
+            (weights.total() - 1.0).abs() < 1e-6,
+            "the default weights sum to {} rather than one",
+            weights.total()
+        );
+    }
+
+    #[test]
+    fn a_reversed_weighting_produces_a_different_answer() {
+        // The other half of the argument. Pinning the ordering is only worth
+        // doing if the ordering changes what the planner decides — otherwise the
+        // constant is decoration and the test above is theatre.
+        // A genuinely clashing key is never scored at all — it is refused, and
+        // `a_clashing_key_is_not_a_low_score_but_no_candidate_at_all` says so.
+        // The comparison that *can* be made is between the two things the
+        // weights actually trade off: a known, matching key against no vocal
+        // collision.
+        let from = candidate(1, 128.0, 0.5)
+            .with_key(Key::minor(PitchClass::E), Confidence::CERTAIN)
+            .with_vocals(true);
+        // Same key, but both records have a vocal.
+        let matching_key = candidate(2, 128.0, 0.5)
+            .with_key(Key::minor(PitchClass::E), Confidence::CERTAIN)
+            .with_vocals(true);
+        // No vocal to collide with, but nothing is known about its key.
+        let no_vocal = candidate(3, 128.0, 0.5).with_vocals(false);
+
+        let under = |weights: Weights, to: &Candidate| -> f32 {
+            score(&from, to, &goal().with_weights(weights), 0.5)
+                .expect("permitted")
+                .total()
+        };
+
+        let reversed = Weights {
+            harmonic: Weights::DEFAULT.vocal,
+            tempo: Weights::DEFAULT.level,
+            energy: Weights::DEFAULT.structure,
+            structure: Weights::DEFAULT.energy,
+            level: Weights::DEFAULT.tempo,
+            vocal: Weights::DEFAULT.harmonic,
+        };
+
+        // Under the shipped weights the record whose key is known to match
+        // wins, even though it means two vocals over each other.
+        assert!(
+            under(Weights::DEFAULT, &matching_key) > under(Weights::DEFAULT, &no_vocal),
+            "the shipped weights preferred an unknown key to a matching one"
+        );
+
+        // Reversed, the preference flips — which is what makes the ordering a
+        // decision worth defending rather than six interchangeable numbers.
+        assert!(
+            under(reversed, &no_vocal) > under(reversed, &matching_key),
+            "reversing the weights changed nothing, so the ordering decides nothing"
+        );
     }
 
     #[test]

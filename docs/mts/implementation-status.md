@@ -322,6 +322,7 @@ _Last updated: Sprint 28._
 | A plan's length is the length it renders at | Completed | Verified | It was not: a forty-minute plan rendered as thirteen minutes and reported no error |
 | `Goal` carries its sample rate | Completed | Verified | A duration in frames is not a duration until something says how long a frame is |
 | A short set is reported as short | Completed | Verified | `duration_error` is also what the search sorts by, so the wrong number was choosing plans |
+| The ordering of the default transition weights | Completed | Verified | Reversing them once passed the whole suite; the ordering is now asserted, and asserted to matter |
 
 ### The defect, stated plainly
 
@@ -345,6 +346,36 @@ between plans as well as describing them.
 The fix is one function, in `prv-mix::pacing`, called from both sides. It was
 found by a probe left behind by the Sprint 26 adversarial review, read rather
 than deleted.
+
+
+### A second defect, and this one was mine
+
+While Sprint 28 was being staged, `prv-mix::Weights::DEFAULT` — the six numbers
+that decide what the planner values in a transition — was **reversed** in the
+commit. Harmonic compatibility fell from the most important thing about a move
+(0.30) to the least (0.05); vocal collision rose from least to most.
+
+It was not an edit anybody made on purpose. A mutation probe from the Sprint 26
+adversarial review was sitting in the working tree, and `git add` on the file
+swept it into the commit alongside two legitimate changes to the same file. It
+was caught afterwards by `git log -L` on the constant, and repaired in the
+following commit.
+
+Two things are worth recording rather than quietly fixing.
+
+**The whole suite passed with the weights reversed.** Seventy-one tests, and not
+one of them said what the constant was *for*. A planner that would rather clash
+two keys than overlap two vocals was indistinguishable, to the test suite, from
+the one the product is supposed to be. That is a coverage gap that existed since
+Sprint 14 and had nothing to do with the mutation; the mutation only revealed it.
+`the_ordering_of_the_default_weights_is_not_an_accident` now pins the ordering —
+deliberately not the values, which Phase 3 calibration will move — and
+`a_reversed_weighting_produces_a_different_answer` asserts that the ordering
+changes what the planner decides, so the first test is not theatre.
+
+**Staging a whole file is not the same as staging your own work.** Every file in
+a commit needs to be diffed, not just listed, when anything else has write access
+to the tree. The review workflow has since been stopped.
 
 ## Where the core stands
 

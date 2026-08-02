@@ -13,7 +13,8 @@ tree, which were read before they were deleted.
 | `prv-project` — `author_all`, `inverses_of`, `Undo::Superseded`, `issued` | 15 new |
 | `prv-dsp` — the limiter's three timing bugs, and no allocation in the streaming path | 8 new |
 | `prv-waveform::Tile::fold` — energy no longer depends on the order of a span | 3 new |
-| — | **933 in total** |
+| `prv-mix::Weights::DEFAULT` — the ordering is now asserted, and asserted to matter | 2 new |
+| — | **935 in total** |
 
 All gates green: `cargo test`, `cargo clippy --all-targets -- -D warnings`,
 `cargo fmt --check`, eight architecture rules, the design-token staleness gate,
@@ -105,6 +106,42 @@ the property.** It filled the outbox to nine tenths of the limit and asserted th
 warning; integer division put it four entries below the line, so it was measuring
 the fixture. It now fills *until* the warning appears and asserts there is still
 room.
+
+## A postscript: the commit that reversed the weights
+
+Sprint 28's own commit shipped a second defect, and the way it happened is more
+instructive than the defect.
+
+`prv-mix::Weights::DEFAULT` — the six numbers that decide what the planner values
+in a transition — was reversed. Harmonic compatibility fell from the most
+important thing about a move to the least; vocal collision rose from least to
+most. Nobody edited it on purpose: a mutation probe from the review was sitting
+in the working tree, and `git add` on that file swept it in alongside two
+legitimate changes to the same file. `git log -L` on the constant found it; the
+next commit repaired it.
+
+**The whole suite passed with the weights reversed.** Seventy-one tests, and not
+one of them said what the constant was for. That gap had existed since Sprint 14
+and had nothing to do with the mutation — the mutation only revealed it. A
+planner that would rather clash two keys than overlap two vocals was, to the
+tests, indistinguishable from the product.
+
+The repair is two tests.
+`the_ordering_of_the_default_weights_is_not_an_accident` pins the *ordering* and
+deliberately not the values, because Phase 3 calibration will move all six and a
+test that pinned them would be deleted the first time it got in the way — which
+is how a constant ends up with no test at all.
+`a_reversed_weighting_produces_a_different_answer` then asserts that the ordering
+changes what the planner actually decides, so the first test is not theatre.
+
+Two process notes, recorded because they generalise:
+
+- **A constant with an argument in its doc comment and no test is undefended.**
+  The prose said harmonic mattered most. Only the prose said it.
+- **Staging a file is not the same as staging your own work.** When anything else
+  has write access to the tree — a review agent, a formatter, a teammate — every
+  file in a commit has to be diffed rather than listed. The review workflow has
+  since been stopped.
 
 ## Known limitations
 
