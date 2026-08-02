@@ -279,10 +279,31 @@ _Last updated: Sprint 24._
 | Delay reported for compensation | Completed | Verified | Look-ahead plus the detector's own delay, both counted |
 | Allocation gate extended | Completed | Verified | The limiter renders 175 000 blocks in a chain with zero allocations |
 
-## Not started
+## Where the core stands
 
-Every module in the [module index](03-module-index.md) not listed above is *Not
-Started*. They are sequenced by the phase plan in [18-roadmap.md](18-roadmap.md).
+Every one of the eighteen bounded contexts in the [module
+index](03-module-index.md) now has a crate in `core/`, built and tested here.
+Twenty-two crates, acyclic, with no third-party runtime dependency.
+
+What that does **not** mean, and the distinction is the point of this document:
+the core *decides*; it does not *act*. There is no code here that opens a file, a
+socket, a keychain, an audio device or a plugin, because ADR-0001 puts all of
+that outside — and the layer that does those things is Swift against Apple
+frameworks, which this environment cannot compile.
+
+So the honest summary is:
+
+- **Every decision the product makes is written, tested and reviewable today.**
+  What tempo a track is, which record follows which, whether a mix meets its
+  target, who may do what, what leaves the device, what a licence withholds, when
+  a plugin is passed over, what a notification interrupts.
+- **Nothing yet performs any of it.** Each of those decisions is waiting on an
+  adapter in the platform layer.
+
+The remaining core-side gaps are recorded per sprint under *Known limitations*
+and summarised in [17-known-limitations.md](17-known-limitations.md). The largest
+are time-stretching with key lock (Phase 2 audio work), a realtime loudness
+meter, and the render path that turns a project into a file.
 
 ## Environment limitation
 
