@@ -133,6 +133,16 @@ public struct PlannedTrack: Sendable, Equatable {
     /// `1.0` for the opening track, which was chosen rather than transitioned
     /// into.
     public let transitionScore: Float
+
+    /// Built by the planner, and by anything that needs to describe a plan the
+    /// planner has not made — a preview, or a test of what an interface does
+    /// with a set that misses its target length.
+    public init(track: UInt64, start: Int64, duration: Int64, transitionScore: Float = 1) {
+        self.track = track
+        self.start = start
+        self.duration = duration
+        self.transitionScore = transitionScore
+    }
 }
 
 /// Plans sets from a library.

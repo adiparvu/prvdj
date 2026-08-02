@@ -2,53 +2,37 @@
 //
 // The Apple side of PRV AI DJ Studio.
 //
-// # Why the packages split where they do
+// # Every target builds on Linux, and that is the point
 //
-// `PRVCore` wraps the C boundary and depends on nothing but Foundation. That is
-// deliberate and it is the most useful property in this file: it means the layer
-// where every mistake is unrecoverable — pointer lifetimes, error codes, the
-// audio callback — compiles and runs on Linux, in continuous integration, on
-// every commit.
+// An earlier version of this manifest declared `PRVKit` and `PRVUI` only on
+// macOS, because they are where CoreAudio and SwiftUI arrive. The effect was
+// that everything in them — including the logic that has nothing to do with
+// either — went unbuilt and untested on every commit.
 //
-// `PRVKit` is where the Apple frameworks arrive: CoreAudio, AVFoundation, the
-// keychain, security-scoped bookmarks. Those cannot be built without the Apple
-// SDKs, so the target is declared for platforms that have them and is absent
-// elsewhere. Keeping it separate from `PRVCore` is what stops the untestable
-// half from swallowing the testable half.
+// So the split is no longer by target. It is by `#if canImport`, *inside* the
+// targets, around the smallest possible amount of code:
 //
-// `PRVUI` is SwiftUI and holds no business rules, as the architecture overview
-// requires of the presentation layer.
+//   - The ports, the session that wires the core together, the decoders that
+//     work on any platform, and every view model: plain Swift, built and tested
+//     on Linux on every commit.
+//   - The CoreAudio render host, the AVFoundation decoder, the keychain store
+//     and the SwiftUI views: behind `#if canImport`, absent on Linux, and
+//     deliberately thin — each is an adapter over a protocol that is itself
+//     tested.
+//
+// The rule that keeps this honest: **no decision lives inside a `#if`.** If a
+// conditional block contains anything worth testing, it is in the wrong place.
 
 import PackageDescription
-
-#if os(macOS)
-let applePlatformTargets: [Target] = [
-    .target(
-        name: "PRVKit",
-        dependencies: ["PRVCore"],
-        path: "Sources/PRVKit"
-    ),
-    .target(
-        name: "PRVUI",
-        dependencies: ["PRVCore", "PRVKit"],
-        path: "Sources/PRVUI"
-    ),
-]
-let applePlatformProducts: [Product] = [
-    .library(name: "PRVKit", targets: ["PRVKit"]),
-    .library(name: "PRVUI", targets: ["PRVUI"]),
-]
-#else
-let applePlatformTargets: [Target] = []
-let applePlatformProducts: [Product] = []
-#endif
 
 let package = Package(
     name: "PRV",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
-        .library(name: "PRVCore", targets: ["PRVCore"])
-    ] + applePlatformProducts,
+        .library(name: "PRVCore", targets: ["PRVCore"]),
+        .library(name: "PRVKit", targets: ["PRVKit"]),
+        .library(name: "PRVUI", targets: ["PRVUI"]),
+    ],
     targets: [
         // The generated C boundary. `path` points at what `bridgegen` produces,
         // so there is no copy of the header to fall behind.
@@ -73,10 +57,23 @@ let package = Package(
             ]
         ),
 
+        .target(name: "PRVKit", dependencies: ["PRVCore"], path: "Sources/PRVKit"),
+        .target(name: "PRVUI", dependencies: ["PRVCore", "PRVKit"], path: "Sources/PRVUI"),
+
         .testTarget(
             name: "PRVCoreTests",
             dependencies: ["PRVCore"],
             path: "Tests/PRVCoreTests"
         ),
-    ] + applePlatformTargets
+        .testTarget(
+            name: "PRVKitTests",
+            dependencies: ["PRVKit"],
+            path: "Tests/PRVKitTests"
+        ),
+        .testTarget(
+            name: "PRVUITests",
+            dependencies: ["PRVUI"],
+            path: "Tests/PRVUITests"
+        ),
+    ]
 )

@@ -177,11 +177,13 @@ jobs:
         with:
           swift-version: "6.1"
 
-      # PRVCore depends on nothing but Foundation and the boundary, which is
-      # what lets the layer where every mistake is unrecoverable — pointer
-      # lifetimes, error codes, the audio callback — be verified on every commit
-      # rather than only where there is macOS capacity.
-      - name: PRVCore builds and its tests pass
+      # Every Swift target builds here, not just PRVCore. The Apple frameworks
+      # are behind `#if canImport` *inside* the targets rather than excluded at
+      # the target level, so the ports, the session, the decoders and every view
+      # model are compiled and tested on each commit. What is absent on this
+      # runner is CoreAudio, AVFoundation, the keychain and SwiftUI — and by
+      # design none of them contains a decision.
+      - name: Swift packages build and their tests pass
         run: swift test --package-path apple
 
   apple:
@@ -191,12 +193,15 @@ jobs:
     # rather than *verified* in the implementation status board. Reporting it
     # otherwise would violate Master Prompt #13 and #27.
     #
-    # This covers less than it once did. `PRVCore` — the boundary wrapper, where
-    # pointer lifetimes and the audio callback live — is verified by the
-    # `bridge` job above on a Linux runner, because it imports no Apple
-    # framework. What remains here is CoreAudio, AVFoundation, the keychain and
-    # SwiftUI: real, and a much smaller unverified surface than "the Apple
-    # layer".
+    # This covers much less than it once did. The `bridge` job above builds and
+    # tests every Swift target on Linux — PRVCore, PRVKit and PRVUI — because
+    # the Apple frameworks sit behind `#if canImport` inside them rather than
+    # excluding whole targets.
+    #
+    # What only this job can check is the four framework adapters
+    # (AVFoundationDecoder, CoreAudioOutput, KeychainStore) and the SwiftUI
+    # views. They are deliberately the thinnest code in the repository: every
+    # decision they might have made lives in a model that is already tested.
     runs-on: macos-14
     if: false
     steps:

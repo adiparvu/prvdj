@@ -123,6 +123,38 @@ public protocol AudioSource: AnyObject {
     ) -> Int
 }
 
+/// The only part of an engine the audio thread may touch.
+///
+/// # Why this exists rather than making `Engine` sendable
+///
+/// The boundary's rule is that one thread calls `render` and one other thread
+/// calls everything else. Marking ``Engine`` `@unchecked Sendable` would express
+/// that as a comment and let the compiler wave through `placeTrack` from a
+/// render callback — which is an allocation, on the audio thread, and exactly
+/// the defect ADR-0002 exists to prevent.
+///
+/// A handle carrying only the render call turns the rule into a type. The
+/// audio thread is handed one of these and cannot reach anything else, so the
+/// mistake stops compiling instead of stopping the music.
+///
+/// `@unchecked` is still required because the pointer is opaque to Swift's
+/// concurrency checking. What it now covers is one function rather than a class.
+public struct RenderHandle: @unchecked Sendable {
+    fileprivate let handle: OpaquePointer
+
+    /// How many channels the engine was built for.
+    public let channels: Int
+
+    /// Renders one block. See ``Engine/render(into:channels:frames:)``.
+    public func render(into buffer: UnsafeMutableBufferPointer<Float>, frames: Int) throws {
+        guard let base = buffer.baseAddress else { throw EngineError.nullPointer }
+        guard buffer.count >= channels * frames else { throw EngineError.bufferTooSmall }
+        try EngineError.check(
+            prv_engine_render(handle, base, UInt32(clamping: channels), UInt32(clamping: frames))
+        )
+    }
+}
+
 /// The core, as Swift sees it.
 ///
 /// # What this type is responsible for
@@ -366,6 +398,16 @@ public final class Engine {
         try EngineError.check(
             prv_engine_render(handle, base, UInt32(clamping: channels), UInt32(clamping: frames))
         )
+    }
+
+    /// A handle the audio thread may hold.
+    ///
+    /// Obtained once, on the thread that owns the engine, and handed to the
+    /// device. It borrows the engine's handle and does not extend its lifetime,
+    /// so the engine must outlive the device — which is the caller's job and is
+    /// what ``PRVKit`` arranges by owning both.
+    public var renderHandle: RenderHandle {
+        RenderHandle(handle: handle, channels: channels)
     }
 
     /// Whether every placement the last render touched was read in full.

@@ -3,30 +3,39 @@
 Master Prompt #28 requires known issues to be documented before a release is
 approved. Recording them here, plainly, is cheaper than discovering them later.
 
-## 1. No Apple-*framework* code has been compiled
+## 1. Four adapters and the SwiftUI views have not been compiled
 
 The continuous-integration environment available for this work is Linux. It
 compiles and tests the Rust core, the C boundary, and Swift that imports no Apple
-framework. It cannot compile SwiftUI, AVFoundation, AudioToolbox or CoreAudio,
-which require the Apple SDKs.
+framework. It cannot compile SwiftUI, AVFoundation, AudioToolbox, Security or
+CoreAudio.
 
-**This limitation is narrower than it was, and the narrowing was deliberate.**
-It once read "no Apple code has been compiled". Swift 6.1 runs on Linux, and
-`PRVCore` — the wrapper over the C boundary, where pointer lifetimes, the audio
-callback and every error code live — imports nothing but Foundation. So it is
-built and tested on every commit, on a Linux runner, against the real static
-library. That is the half of the Apple layer where a mistake is unrecoverable,
-and it is now verified rather than merely written.
+**This limitation has been narrowed twice, deliberately, and it is now as small
+as the architecture can make it.** It began as "no Apple code has been
+compiled". Swift 6.1 runs on Linux, so it became "no Apple-*framework* code".
+Then the framework imports were moved from *target* boundaries to `#if
+canImport` blocks *inside* the targets, so `PRVCore`, `PRVKit` and `PRVUI` all
+build and test on every commit.
 
-Keeping `PRVCore` free of framework imports is what buys that, which is why the
-package is split the way it is: `PRVKit` is where CoreAudio and the keychain
-arrive, and it is a separate target precisely so the untestable half cannot
-swallow the testable half.
+What remains unverified is exactly four types and one file of views:
 
-**Consequence.** Every module in `core/`, the generated bindings, and `PRVCore`
-are reported as *verified*. `PRVKit`'s framework adapters and all of `PRVUI` are
-reported as *authored* until a macOS runner compiles and tests them. The job
-exists in the workflow and is disabled.
+| Unverified | What it does |
+|---|---|
+| `AVFoundationDecoder` | Decodes a file to mono samples |
+| `CoreAudioOutput` | Pulls blocks from a render handle |
+| `KeychainStore` | Writes bytes to the keychain |
+| `Views.swift` | Draws the models |
+
+**The rule that keeps this honest: no decision lives inside a `#if`.** Every
+threshold, format, refusal and fallback is in `Session`, `SpaceModels` or the
+core — all tested. An adapter above can be wrong about a pixel or an audio unit
+flag. It cannot be wrong about the product, because it does not know anything
+about the product.
+
+**Consequence.** Everything in `core/`, the generated bindings, `PRVCore`,
+`PRVKit`'s ports and session, and every `PRVUI` model are reported as *verified*.
+The four adapters and the views are *authored*. The macOS job exists in the
+workflow and is disabled.
 
 Reporting authored code as working would violate Master Prompt #13 and #27, so
 the distinction is maintained explicitly in

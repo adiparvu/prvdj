@@ -37,13 +37,13 @@ I infrastructure, P presentation.
 |-----------|---------|---|----------|
 | `prv-bridge` | Generated C header and module map, emitted by `bridgegen` | I | `apple/PRVKit/Bridge/Generated` |
 | `prv-core-swift` | Safe Swift over the boundary; imports no Apple framework, so it is tested on Linux | I | `apple/Sources/PRVCore` |
-| `audio-host` | CoreAudio/AVAudioEngine render host, device management | I | `apple/PRVKit/AudioHost` |
-| `platform-io` | File access, security-scoped bookmarks, decoders | I | `apple/PRVKit/PlatformIO` |
-| `secure-store` | Keychain, device authorisation, session handling | I | `apple/PRVKit/SecureStore` |
-| `net-transport` | Cloud transport, retry, integrity | I | `apple/PRVKit/Net` |
+| `audio-host` | CoreAudio render host behind an `AudioOutput` port | I | `apple/Sources/PRVKit` |
+| `platform-io` | Decoding and project storage behind `MediaDecoder`/`ProjectStore` | I | `apple/Sources/PRVKit` |
+| `secure-store` | Keychain behind a `SecretStore` port | I | `apple/Sources/PRVKit` |
+| `net-transport` | Cloud transport, retry, integrity | I | not started |
 | `design-tokens` | Generated token definitions | P | `apple/PRVUI/Tokens` |
-| `components` | The component library of MP#17 | P | `apple/PRVUI/Components` |
-| `spaces` | Home, Library, AI Studio, Mix Editor, Live, Settings | P | `apple/PRVUI/Spaces` |
+| `components` | Models and views for the component library of MP#17 | P | `apple/Sources/PRVUI` |
+| `spaces` | Home, Library, AI Studio, Mix Editor, Live, Settings | P | `apple/Sources/PRVUI` |
 
 ## Entitlements are a thin layer, deliberately
 
