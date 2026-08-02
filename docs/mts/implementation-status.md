@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 24._
+_Last updated: Sprint 25._
 
 ## Sprint 0 — Foundation
 
@@ -278,6 +278,18 @@ _Last updated: Sprint 24._
 | Straight-line gain, never a step | Completed | Verified | Bounded by the steepest line to silence over the delay |
 | Delay reported for compensation | Completed | Verified | Look-ahead plus the detector's own delay, both counted |
 | Allocation gate extended | Completed | Verified | The limiter renders 175 000 blocks in a chain with zero allocations |
+
+## Sprint 25 — Key lock, and two defects it uncovered
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-dsp::TimeStretch` | Completed | Verified | Waveform-similarity overlap-add; pitch held within 8 Hz across the ratio range |
+| Stereo spliced once, not twice | Completed | Verified | The search runs on the sum; identical channels stay identical to 1e-6 |
+| `prv-dsp::Resampler` | Completed | Verified | Cutoff follows the rate; a tone above the new Nyquist does not fold back |
+| `prv-dsp::PitchShift` | Completed | Verified | Four semitones moves 440 Hz to 554 Hz and leaves the length alone |
+| Allocation gate for the streaming path | Completed | Verified | Caught a `to_vec` in both `read` paths before it shipped |
+| `Tile::fold` replaces a chained merge | Completed | Verified | Rendered energy no longer depends on the order of the span |
+| Crossovers validated at the boundary | Completed | Verified | A non-finite crossover no longer poisons the equaliser permanently |
 
 ## Where the core stands
 

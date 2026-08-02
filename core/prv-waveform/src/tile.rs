@@ -129,19 +129,56 @@ impl Tile {
         Self { min, max, energy }
     }
 
-    /// Combines two tiles into one covering both spans.
+    /// Combines two tiles of equal span into one.
     ///
-    /// Used when rendering aggregates several tiles into one pixel. Energy is
-    /// combined as a simple mean of the two, which is exact when the spans are
-    /// equal — the only case that occurs, because a level's tiles all cover the
-    /// same number of samples.
+    /// A convenience over [`Self::fold`], which is what the render path uses.
+    /// Reducing a run of tiles with this would be wrong: see `fold` for the
+    /// reason, which is the whole of why that function exists.
     #[must_use]
     pub fn merge(self, other: Self) -> Self {
-        Self {
-            min: self.min.min(other.min),
-            max: self.max.max(other.max),
-            energy: (self.energy + other.energy) * 0.5,
+        Self::fold(&[self, other]).unwrap_or(Self::SILENT)
+    }
+
+    /// Combines any number of equal-span tiles into one.
+    ///
+    /// # Why this is not a chain of `merge`
+    ///
+    /// Energy is a root mean square, and the root mean square of a whole is not
+    /// the mean of the roots of its parts. Averaging the stored values
+    /// under-reports whenever two spans differ: half a second at full scale
+    /// beside half a second of silence is 0.707, not 0.5.
+    ///
+    /// Worse, folding pairwise from the left weights the last tile by a half,
+    /// the one before it by a quarter, and so on — so a span renders a different
+    /// energy from the same span reversed. A quiet intro into a loud drop would
+    /// draw differently from a loud intro into a quiet outro carrying identical
+    /// audio. That is a display that lies about the music, which is exactly what
+    /// the energy row exists to avoid.
+    ///
+    /// Summing the squares across the whole slice and taking one root at the end
+    /// is both correct and order-independent, and it is why the render path
+    /// folds a slice rather than reducing with `merge`.
+    ///
+    /// Returns `None` for an empty slice: no tiles is not silence, it is the
+    /// absence of an answer, and the caller decides what to draw for that.
+    #[must_use]
+    pub fn fold(tiles: &[Self]) -> Option<Self> {
+        let (first, rest) = tiles.split_first()?;
+        let mut min = first.min;
+        let mut max = first.max;
+        let mut sum_of_squares = f64::from(first.energy) * f64::from(first.energy);
+
+        for tile in rest {
+            min = min.min(tile.min);
+            max = max.max(tile.max);
+            sum_of_squares += f64::from(tile.energy) * f64::from(tile.energy);
         }
+
+        Some(Self {
+            min,
+            max,
+            energy: root_mean(sum_of_squares, tiles.len()),
+        })
     }
 
     /// The larger of the two extremes, in magnitude.
@@ -173,8 +210,29 @@ impl Default for Tile {
     }
 }
 
+/// The root of a mean of squares, narrowed for storage.
+///
+/// The sum is accumulated in double precision because a long span is tens of
+/// thousands of tiles and a single-precision accumulator loses the quiet ones.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "the count is a tile count and the result is a display value in [0, 1]"
+)]
+fn root_mean(sum_of_squares: f64, count: usize) -> f32 {
+    if count == 0 {
+        return 0.0;
+    }
+    (sum_of_squares / count as f64).sqrt() as f32
+}
+
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        reason = "a test that cannot build its own fixture should fail loudly"
+    )]
     #![allow(
         clippy::float_cmp,
         reason = "tile summaries of exact inputs are exact by construction"
@@ -268,6 +326,50 @@ mod tests {
         let left = Tile::from_samples(&[0.5, -0.2]);
         let right = Tile::from_samples(&[0.1, -0.8]);
         assert_eq!(left.merge(right), right.merge(left));
+    }
+
+    #[test]
+    fn folding_a_span_does_not_depend_on_the_order_of_its_tiles() {
+        // The defect this replaced: folding pairwise from the left weighted the
+        // last tile by a half and the first by an eighth, so a quiet intro into
+        // a loud drop drew differently from a loud intro into a quiet outro
+        // carrying identical audio.
+        let loud = Tile::from_samples(&[0.5; 64]);
+        let quiet = Tile::SILENT;
+
+        let forwards = Tile::fold(&[loud, quiet, quiet, quiet]).expect("four tiles");
+        let backwards = Tile::fold(&[quiet, quiet, quiet, loud]).expect("four tiles");
+        assert_eq!(forwards, backwards);
+    }
+
+    #[test]
+    fn the_energy_of_a_span_is_the_energy_of_its_samples() {
+        // Not the mean of the parts' energies. Half a second at full scale
+        // beside half a second of silence is 0.707, not 0.5 — and the fold has
+        // to agree with what a single tile over the same samples would say.
+        let mut samples = vec![0.0_f32; 256];
+        for slot in samples.iter_mut().take(64) {
+            *slot = 0.5;
+        }
+
+        let whole = Tile::from_samples(&samples);
+        let quarters: Vec<Tile> = samples.chunks(64).map(Tile::from_samples).collect();
+        let folded = Tile::fold(&quarters).expect("four tiles");
+
+        assert!(
+            (folded.energy - whole.energy).abs() < 1e-6,
+            "the fold said {} where the samples say {}",
+            folded.energy,
+            whole.energy
+        );
+        assert!((folded.energy - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn folding_nothing_is_an_absence_rather_than_silence() {
+        // No tiles is not a silent span; it is the absence of an answer, and
+        // the caller decides what to draw for that.
+        assert_eq!(Tile::fold(&[]), None);
     }
 
     #[test]

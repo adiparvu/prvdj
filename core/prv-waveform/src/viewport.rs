@@ -196,14 +196,11 @@ fn summarise(tiles: &[Tile], start_frame: i64, end_frame: i64, samples_per_tile:
         return Peak::SILENT;
     };
 
-    let mut merged: Option<Tile> = None;
-    for tile in covered {
-        merged = Some(match merged {
-            None => *tile,
-            Some(existing) => existing.merge(*tile),
-        });
-    }
-    merged.map_or(Peak::SILENT, Peak::from)
+    // Folded over the whole slice rather than reduced pairwise. Reducing with
+    // `merge` weighted the last tile by a half and the first by an eighth, so
+    // the same span drawn in reverse produced a different energy — a display
+    // that lies about the music, which is what the energy row exists to avoid.
+    Tile::fold(covered).map_or(Peak::SILENT, Peak::from)
 }
 
 /// Integer division that floors, so negative viewport positions behave.

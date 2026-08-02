@@ -65,7 +65,12 @@ did not have would be worse than no row at all.
 | Effects stackable, bypassable, latency-reporting | MP#3A, MP#23 | `prv-dsp::Chain` | `latency_sums_only_the_active_processors`, `a_bypassed_processor_is_skipped_entirely` | **Verified** |
 | Per-block cost bounded | MP#31 | `prv-dsp::Chain` | `the_chain_length_is_bounded` | **Verified** |
 | Wait-free state publication to the interface | MS#002, MS#003 | `prv-rt::triple_buffer` | `values_are_never_torn_under_concurrency` | **Verified** |
-| Time stretching, key lock | MP#3A | — | — | Not started |
+| Time stretching, key lock | MP#3A | `prv-dsp::TimeStretch` | `stretching_changes_the_length_and_leaves_the_pitch_alone`, `a_ratio_of_one_is_transparent` | **Verified** |
+| Key shifting without changing tempo | MP#3A, MP#20 | `prv-dsp::PitchShift` | `shifting_the_key_leaves_the_length_alone` | **Verified** |
+| Vari-speed does not alias | MP#3A, MP#15 | `prv-dsp::Resampler` | `speeding_up_removes_what_would_otherwise_fold_back` | **Verified** |
+| A stereo splice is one splice | MP#15 | `prv-dsp::TimeStretch` | `both_channels_are_spliced_at_the_same_place` | **Verified** |
+| Rendered energy does not depend on the order of a span | MP#2, MP#20 | `prv-waveform::Tile::fold` | `folding_a_span_does_not_depend_on_the_order_of_its_tiles`, `the_energy_of_a_span_is_the_energy_of_its_samples` | **Verified** |
+| A control value from outside cannot poison the signal path | MP#15, MP#18 | `prv-dsp::ThreeBandEq::set_crossovers` | `a_non_finite_crossover_never_reaches_the_coefficients` | **Verified** |
 | Master limiter, true peak | MP#3A, MP#3C | `prv-dsp::Limiter` | `nothing_leaves_above_the_ceiling`, `it_limits_the_peak_a_converter_would_produce_not_the_sample_peak` | **Verified** |
 | The limiter is transparent below its ceiling | MP#15 | `prv-dsp::Limiter` | `a_signal_already_under_the_ceiling_comes_out_unchanged` | **Verified** |
 | Gain reduction never steps | MP#18 | `prv-dsp::Limiter` | `the_gain_moves_in_straight_lines_and_never_steps`, `the_gain_is_already_down_when_the_peak_arrives` | **Verified** |

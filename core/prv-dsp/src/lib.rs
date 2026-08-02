@@ -45,6 +45,8 @@ mod filter;
 mod gain;
 mod limiter;
 mod processor;
+mod resample;
+mod stretch;
 
 pub use biquad::{Biquad, BiquadCoefficients};
 pub use chain::Chain;
@@ -53,3 +55,5 @@ pub use filter::DjFilter;
 pub use gain::Gain;
 pub use limiter::Limiter;
 pub use processor::{PrepareConfig, ProcessContext, Processor};
+pub use resample::{PitchShift, Resampler};
+pub use stretch::TimeStretch;

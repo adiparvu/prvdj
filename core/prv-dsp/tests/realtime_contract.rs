@@ -34,7 +34,8 @@ use prv_time::{SampleRate, Tempo, TimeSignature};
 use prv_transport::{Transport, TransportEvent};
 
 use prv_dsp::{
-    Chain, DjFilter, Gain, Limiter, PrepareConfig, ProcessContext, Processor, ThreeBandEq,
+    Chain, DjFilter, Gain, Limiter, PitchShift, PrepareConfig, ProcessContext, Processor,
+    Resampler, ThreeBandEq, TimeStretch,
 };
 
 #[global_allocator]
@@ -197,4 +198,75 @@ fn fill(buffer: &mut AudioBuffer, block: usize) {
             }
         }
     }
+}
+
+/// The streaming components are not `Processor`s — they exist precisely because
+/// the number of samples in and the number out differ — so the two tests above
+/// do not reach them. They run in the same callback and are bound by the same
+/// contract, and their write/read paths copy between buffers, which is exactly
+/// where a `to_vec` slips in.
+///
+/// It did, in the first version of both. This is the test that would have
+/// caught it.
+#[test]
+fn the_streaming_components_allocate_nothing_while_running() {
+    let config = PrepareConfig::new(RATE, BLOCK_FRAMES as u32, 2);
+
+    let mut stretch = TimeStretch::new();
+    stretch.prepare(&config);
+    stretch.set_ratio(1.25);
+
+    let mut resampler = Resampler::new();
+    resampler.prepare(&config);
+    resampler.set_rate(1.25);
+
+    let mut shift = PitchShift::new();
+    shift.prepare(&config).expect("a valid configuration");
+    shift.set_semitones(3.0);
+
+    let mut input = AudioBuffer::new(2, BLOCK_FRAMES).expect("valid buffer shape");
+    let mut output = AudioBuffer::new(2, BLOCK_FRAMES).expect("valid buffer shape");
+
+    // Prime outside the measurement: the first frames are where the buffers
+    // would grow if they were going to, and measuring only the steady state
+    // would miss it. Priming here and measuring afterwards is deliberate — the
+    // loop below runs long enough to cover every path several hundred times.
+    fill(&mut input, 0);
+    let _ = stretch.write(&input, BLOCK_FRAMES);
+    let _ = resampler.write(&input, BLOCK_FRAMES);
+    let _ = shift.write(&input, BLOCK_FRAMES);
+
+    let scope = AllocationScope::begin();
+
+    for block in 0..BLOCKS {
+        fill(&mut input, block);
+
+        // A ratio that moves, because a fader moves. `set_rate` is documented as
+        // a control-thread call and may rebuild a kernel; it must still not
+        // allocate, because the kernel it writes into already exists.
+        if block % 500 == 0 {
+            let step = ((block / 500) % 5) as f64;
+            let sweep = 0.05_f64.mul_add(step, 1.0);
+            stretch.set_ratio(sweep);
+            resampler.set_rate(sweep);
+            shift.set_semitones(step - 2.0);
+        }
+
+        let _ = stretch.write(&input, BLOCK_FRAMES);
+        while stretch.read(&mut output, BLOCK_FRAMES) > 0 {}
+
+        let _ = resampler.write(&input, BLOCK_FRAMES);
+        while resampler.read(&mut output, BLOCK_FRAMES) > 0 {}
+
+        let _ = shift.write(&input, BLOCK_FRAMES);
+        while shift.read(&mut output, BLOCK_FRAMES) > 0 {}
+    }
+
+    assert_eq!(
+        scope.allocations(),
+        0,
+        "the streaming components allocated {} times",
+        scope.allocations()
+    );
+    assert_eq!(scope.deallocations(), 0);
 }

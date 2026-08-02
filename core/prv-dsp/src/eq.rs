@@ -166,8 +166,29 @@ impl ThreeBandEq {
     /// produce a mid band of negative width, which is meaningless.
     pub fn set_crossovers(&mut self, low_hz: f64, high_hz: f64) {
         let nyquist = f64::from(self.sample_rate.hz()) * 0.5;
-        self.low_crossover_hz = low_hz.clamp(20.0, nyquist * 0.4);
-        self.high_crossover_hz = high_hz.clamp(self.low_crossover_hz * 1.5, nyquist * 0.9);
+
+        // A crossover arrives from outside — an automation curve, a plugin, a
+        // project written by another build. `clamp` *propagates* a non-finite
+        // value rather than removing it, so one NaN here designs a filter of
+        // non-finite coefficients, every sample after it is non-finite, and
+        // `reset` does not recover: it clears state, not coefficients. The deck
+        // would be silent for the rest of the session.
+        //
+        // Keeping the previous value is the only answer that leaves the audio
+        // playable. A caller that wanted a different crossover and sent
+        // nonsense has a defect; a listener should not hear it.
+        if low_hz.is_finite() {
+            self.low_crossover_hz = low_hz.clamp(20.0, nyquist * 0.4);
+        }
+        if high_hz.is_finite() {
+            self.high_crossover_hz = high_hz.clamp(self.low_crossover_hz * 1.5, nyquist * 0.9);
+        } else {
+            // The low crossover may have moved, and the high one must stay above
+            // it or the bands overlap.
+            self.high_crossover_hz = self
+                .high_crossover_hz
+                .clamp(self.low_crossover_hz * 1.5, nyquist * 0.9);
+        }
         self.design();
     }
 
@@ -316,6 +337,11 @@ fn clamp_gain(gain: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        reason = "a test that cannot build its own fixture should fail loudly"
+    )]
     // Measurement helpers convert between sample indices and floating-point
     // phase throughout. The values involved are block offsets and frequencies,
     // orders of magnitude below any precision limit, and a conversion error
@@ -538,6 +564,62 @@ mod tests {
                 value,
                 Some(0.25),
                 "frames beyond the block must be left untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_finite_crossover_never_reaches_the_coefficients() {
+        // `clamp` propagates NaN rather than removing it. One of these would
+        // have made every sample non-finite for the rest of the session, and
+        // `reset` would not have recovered — it clears state, not coefficients.
+        let rate = SampleRate::HZ_48000;
+        for (low, high) in [
+            (f64::NAN, 4_000.0),
+            (200.0, f64::NAN),
+            (f64::NAN, f64::NAN),
+            (f64::INFINITY, f64::NEG_INFINITY),
+        ] {
+            let mut equaliser = ThreeBandEq::new();
+            equaliser.prepare(&PrepareConfig::new(rate, 64, 1));
+            equaliser.set_crossovers(low, high);
+
+            let mut buffer = AudioBuffer::new(1, 64).expect("a buffer");
+            if let Some(channel) = buffer.channel_mut(0) {
+                channel.fill(0.5);
+            }
+            equaliser.process(&ProcessContext::new(64, rate), &mut buffer);
+
+            let bad = buffer
+                .channel(0)
+                .map_or(0, |data| data.iter().filter(|s| !s.is_finite()).count());
+            assert_eq!(
+                bad, 0,
+                "crossovers ({low}, {high}) produced {bad} non-finite samples"
+            );
+        }
+    }
+
+    #[test]
+    fn the_bands_never_overlap_however_the_crossovers_arrive() {
+        // The high crossover is defined relative to the low one, so a sequence
+        // that moves the low one upward must carry the high one with it.
+        let rate = SampleRate::HZ_48000;
+        let mut equaliser = ThreeBandEq::new();
+        equaliser.prepare(&PrepareConfig::new(rate, 64, 1));
+
+        for (low, high) in [
+            (100.0, 8_000.0),
+            (9_000.0, f64::NAN),
+            (50.0, 60.0),
+            (f64::NAN, 100.0),
+        ] {
+            equaliser.set_crossovers(low, high);
+            assert!(
+                equaliser.high_crossover_hz > equaliser.low_crossover_hz,
+                "after ({low}, {high}) the bands overlap: {} against {}",
+                equaliser.low_crossover_hz,
+                equaliser.high_crossover_hz
             );
         }
     }
