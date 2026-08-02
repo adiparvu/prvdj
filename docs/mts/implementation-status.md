@@ -395,6 +395,25 @@ sprints are about.
 | `PRVKit` framework adapters | Not started | — | CoreAudio, AVFoundation, keychain — the genuinely unverifiable part |
 | `PRVUI` | Not started | — | SwiftUI |
 
+## Sprint 31 — The planner reaches the host
+
+The headline feature, across the boundary. A host describes its library, asks
+for a set, reads the tracklist back, and applies it to the project — where it
+becomes ordinary operations on the log, indistinguishable from an edit somebody
+made by hand.
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::planning` | Completed | Verified | Candidates built by call, not by struct: a `repr(C)` layout is a permanent promise |
+| A plan is held, not returned | Completed | Verified | Nothing allocated on the host's behalf, nothing to free, no size-then-read race |
+| `prv_planner_apply` | Completed | Verified | MP#3B by construction: nothing marks a placement as generated |
+| Applying twice does not reuse an identity | Completed | Verified | ADR-0003; reuse would make a merge drop the second set as "already present" |
+| ABI minor version 1.1 | Completed | Verified | Calls added, nothing existing moved — what the minor field is for |
+| `PRVCore.Planner` | Completed | **Verified on Linux** | 9 further Swift tests, including the whole loop end to end |
+
+The boundary now carries the product's actual promise: *"a two-hour set that
+builds"* goes in, a tracklist comes out, and the audio plays.
+
 ### The limitation that shrank
 
 R-01 used to read "no Apple code has been compiled". It now reads "no

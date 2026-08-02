@@ -45,6 +45,7 @@ use std::fmt::Write as _;
 use std::process::ExitCode;
 
 use prv_ffi::mapping::{PLAYBACK_STATES, TRANSPORT_EVENTS};
+use prv_ffi::planning::{CREATIVITY_SETTINGS, ENERGY_SHAPES};
 use prv_ffi::{abi, Status};
 
 /// One exported function, as C sees it.
@@ -105,6 +106,54 @@ fn declarations() -> Vec<Declaration> {
         prv_ffi::exports::prv_engine_render;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut i32) -> i32 =
         prv_ffi::exports::prv_engine_render_was_complete;
+    let _: unsafe extern "C" fn(*mut *mut prv_ffi::Planner) -> i32 =
+        prv_ffi::exports::prv_planner_create;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Planner) = prv_ffi::exports::prv_planner_destroy;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Planner,
+        u64,
+        i64,
+        f64,
+        f32,
+        i32,
+        i32,
+        f32,
+        f32,
+        i32,
+    ) -> i32 = prv_ffi::exports::prv_planner_add_candidate;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Planner, u64, i64, f32, i32) -> i32 =
+        prv_ffi::exports::prv_planner_add_mix_point;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut u64) -> i32 =
+        prv_ffi::exports::prv_planner_candidate_count;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Planner) -> i32 = prv_ffi::exports::prv_planner_clear;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Planner,
+        i64,
+        u32,
+        i32,
+        i32,
+        f32,
+        f32,
+        *mut u64,
+    ) -> i32 = prv_ffi::exports::prv_planner_plan;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Planner, u64) -> i32 =
+        prv_ffi::exports::prv_planner_select;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut u64) -> i32 =
+        prv_ffi::exports::prv_planner_track_count;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut i64) -> i32 =
+        prv_ffi::exports::prv_planner_duration;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut f32) -> i32 =
+        prv_ffi::exports::prv_planner_score;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Planner,
+        u64,
+        *mut u64,
+        *mut i64,
+        *mut i64,
+        *mut f32,
+    ) -> i32 = prv_ffi::exports::prv_planner_track;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut prv_ffi::Engine, i64) -> i32 =
+        prv_ffi::exports::prv_planner_apply;
 
     vec![
         Declaration {
@@ -230,6 +279,113 @@ fn declarations() -> Vec<Declaration> {
                 "",
                 "Zero means some audio was missing. That is worth showing a user, but it",
                 "is not an error: the render happened and what was there is correct.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_create(PrvPlanner **out_planner)",
+            doc: &[
+                "Creates a planner.",
+                "",
+                "A separate handle from the engine, deliberately. A library and a plan",
+                "are not a project: a host may plan with no project open, and may keep",
+                "one open while replanning.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_planner_destroy(PrvPlanner *planner)",
+            doc: &["Destroys a planner. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_add_candidate(PrvPlanner *planner, uint64_t track, \
+                        int64_t duration, double bpm, float energy, int32_t key_semitones, \
+                        int32_t key_is_minor, float key_confidence, float loudness_lufs, \
+                        int32_t has_vocals)",
+            doc: &[
+                "Adds one track to the library the planner chooses from.",
+                "",
+                "`key_confidence` at or below zero means the key is unknown. `has_vocals`",
+                "is -1 for unknown, 0 for no, 1 for yes — and unknown is a different",
+                "answer from no, which scores differently.",
+                "",
+                "Facts are arguments rather than a struct on purpose: a struct here would",
+                "be a permanent layout promise, and the first field anybody wants to add",
+                "next year would break every host compiled against it.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_add_mix_point(PrvPlanner *planner, uint64_t track, \
+                        int64_t position, float energy, int32_t is_exit)",
+            doc: &[
+                "Adds a place the analysis says a track can be left or entered.",
+                "",
+                "A track with no exit point is mixed out of near its end, which the",
+                "planner treats as a real answer rather than a missing one.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_candidate_count(const PrvPlanner *planner, \
+                        uint64_t *out_count)",
+            doc: &["Reads how many candidates the library holds."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_clear(PrvPlanner *planner)",
+            doc: &["Forgets the library and any plan made from it."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_plan(PrvPlanner *planner, int64_t target_frames, \
+                        uint32_t sample_rate, int32_t shape, int32_t creativity, \
+                        float tempo_floor, float tempo_ceiling, uint64_t *out_count)",
+            doc: &[
+                "Plans up to three genuinely different sets.",
+                "",
+                "Pass zero for both tempo bounds to leave the range open; half a range is",
+                "treated as no range, because honouring it would constrain the set in a",
+                "way nobody asked for.",
+                "",
+                "Returns PRV_REFUSED when no set could be built. That is a real answer",
+                "about the library — nothing in it fits — not a malfunction.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_select(PrvPlanner *planner, uint64_t index)",
+            doc: &["Chooses which alternative subsequent reads describe."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_track_count(const PrvPlanner *planner, \
+                        uint64_t *out_count)",
+            doc: &["Reads how many tracks the selected plan holds."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_duration(const PrvPlanner *planner, \
+                        int64_t *out_duration)",
+            doc: &["Reads how long the selected plan runs for, in frames."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_score(const PrvPlanner *planner, float *out_score)",
+            doc: &["Reads the selected plan's mean transition score, from zero to one."],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_track(const PrvPlanner *planner, uint64_t index, \
+                        uint64_t *out_track, int64_t *out_start, int64_t *out_duration, \
+                        float *out_score)",
+            doc: &[
+                "Reads one track of the selected plan.",
+                "",
+                "The score is the move *into* this track, and is 1.0 for the opening",
+                "track, which was chosen rather than transitioned into.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_apply(const PrvPlanner *planner, PrvEngine *engine, \
+                        int64_t timestamp_micros)",
+            doc: &[
+                "Applies the selected plan to an engine's project.",
+                "",
+                "The plan becomes ordinary operations on the log — the same ones a",
+                "hand-made edit produces. After this there is nothing in the document",
+                "that says which placements a person made and which the planner did,",
+                "which is what makes a generated mix editable rather than merely",
+                "promised to be.",
             ],
         },
     ]
@@ -373,9 +529,33 @@ fn header() -> String {
     out.push_str("} PrvTransportEvent;\n\n");
 
     out.push_str(
+        "/* The shape of a set's energy over its length. */\ntypedef enum PrvEnergyShape {\n",
+    );
+    for (index, (_, name)) in ENERGY_SHAPES.iter().enumerate() {
+        let _ = writeln!(out, "    {name} = {index},");
+    }
+    out.push_str(&signed_sentinel("PRV_ENERGY_FORCE_SIGNED"));
+    out.push_str("} PrvEnergyShape;\n\n");
+
+    out.push_str(
+        "/* How far the planner may depart from established practice.\n\
+         *\n\
+         * This never relaxes a hard constraint. A clashing key is not generated at\n\
+         * any setting; creativity widens the soft limits only. */\ntypedef enum PrvCreativity {\n",
+    );
+    for (index, (_, name)) in CREATIVITY_SETTINGS.iter().enumerate() {
+        let _ = writeln!(out, "    {name} = {index},");
+    }
+    out.push_str(&signed_sentinel("PRV_CREATIVITY_FORCE_SIGNED"));
+    out.push_str("} PrvCreativity;\n\n");
+
+    out.push_str(
         r"/* An engine. Opaque: the host never sees inside it, which is what lets the
  * layout change without touching this header. */
 typedef struct PrvEngine PrvEngine;
+
+/* A planner: a library of candidates, and the sets planned from it. */
+typedef struct PrvPlanner PrvPlanner;
 
 ",
     );

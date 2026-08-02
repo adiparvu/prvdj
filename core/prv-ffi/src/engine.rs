@@ -163,6 +163,7 @@ pub struct Engine {
     device: DeviceId,
     channels: usize,
     block_frames: usize,
+    sample_rate: SampleRate,
     next_placement: u64,
     /// Set once `prepare` has run, because rendering before it would have no
     /// scratch buffer and would silently produce nothing.
@@ -210,6 +211,7 @@ impl Engine {
             device: DeviceId::new(1),
             channels,
             block_frames: block,
+            sample_rate,
             next_placement: 1,
             prepared: true,
         })
@@ -311,6 +313,51 @@ impl Engine {
     #[must_use]
     pub fn placement_count(&self) -> u64 {
         self.state.placements.len().try_into().unwrap_or(u64::MAX)
+    }
+
+    /// Applies a planned set to this project.
+    ///
+    /// # A generated mix is an ordinary edit
+    ///
+    /// The plan becomes operations on the log — placements, automation, tempo
+    /// changes — which is what `prv-mix::render` produces and what a hand-made
+    /// edit produces. Master Prompt #3B requires the user to be able to edit
+    /// everything the system decides, and this is what makes that true by
+    /// construction: after this call there is nothing in the document that says
+    /// which placements a person made and which the planner did.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidState`] when nothing has been planned, and
+    /// [`Status::Refused`] when the log will not accept an operation.
+    pub fn apply_plan(
+        &mut self,
+        planner: &crate::planning::Planner,
+        timestamp_micros: i64,
+    ) -> Result<(), Status> {
+        let payloads = planner.operations(self.sample_rate, self.next_placement)?;
+        if payloads.is_empty() {
+            return Err(Status::InvalidState);
+        }
+
+        // The planner allocated placement identities starting from this
+        // engine's next one, so the counter advances past every identity it
+        // used. Counting the placements rather than the payloads is deliberate:
+        // a render emits automation and tempo changes too, and treating those
+        // as identities would leave gaps that look like deleted clips.
+        let used = payloads
+            .iter()
+            .filter(|payload| matches!(payload, OperationPayload::PlaceTrack { .. }))
+            .count();
+
+        for operation in self.log.author_all(self.device, timestamp_micros, payloads) {
+            self.log.append(operation).map_err(|_| Status::Refused)?;
+        }
+        self.next_placement = self
+            .next_placement
+            .saturating_add(used.try_into().unwrap_or(0));
+
+        self.refold()
     }
 
     /// Rebuilds the materialised state and the renderer's automation.

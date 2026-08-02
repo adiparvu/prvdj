@@ -157,6 +157,9 @@ did not have would be worse than no row at all.
 | Bindings are generated, never hand-written | MP#4, MP#28 | `bridgegen` | architecture rule 9, `the_committed_header_is_what_the_generator_produces` | **Enforced** |
 | The header and the library actually agree | MP#27 | `prv-ffi/tests/c_host.rs` | `a_c_host_can_drive_the_boundary_through_the_generated_header` | **Verified** |
 | A host cannot hold the boundary wrongly | MP#4 | `PRVCore.Engine` | `the_source_outlives_the_engines_ability_to_call_it`, `a_buffer_too_small_for_the_block_is_caught_before_the_boundary` | **Verified** |
+| A host can plan a set | MP#3B, MP#19 | `prv-ffi::planning` | `a_host_can_build_a_library_plan_a_set_and_read_it_back`, `the_whole_product_in_one_test_library_to_plan_to_timeline_to_audio` | **Verified** |
+| A generated mix is an ordinary edit | MP#3B, MP#9, ADR-0003 | `prv_planner_apply` | `a_plan_becomes_ordinary_operations_on_the_log`, `applying_a_plan_twice_does_not_reuse_a_placement_identity` | **Verified** |
+| An unplannable library is told, not shown an empty list | MP#3B, MP#12 | `prv-ffi::Planner::plan` | `planning_with_an_empty_library_is_refused_rather_than_returning_nothing` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

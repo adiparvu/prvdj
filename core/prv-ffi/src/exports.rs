@@ -19,6 +19,7 @@ use crate::abi;
 use crate::engine::{Engine, ReadAudio};
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
+use crate::planning::Planner;
 use crate::status::Status;
 
 /// The version of this boundary, packed as `major << 16 | minor << 8 | patch`.
@@ -349,6 +350,334 @@ pub unsafe extern "C" fn prv_engine_render_was_complete(
         let slot = unsafe { as_mut(out_complete) }?;
         *slot = i32::from(engine.render_was_complete());
         Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Planning
+//
+// A separate handle from the engine, deliberately. A library and a plan are not
+// a project: a host may plan against a library with no project open, and may
+// keep a project open while replanning. Tying them together would make one
+// impossible and the other awkward, and the two have no invariant in common.
+// ---------------------------------------------------------------------------
+
+/// Creates a planner.
+///
+/// # Safety
+///
+/// `out_planner` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_create(out_planner: *mut *mut Planner) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_planner) }?;
+        *slot = core::ptr::null_mut();
+        *slot = Box::into_raw(Box::new(Planner::new()));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys a planner. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `planner` must be a pointer returned by [`prv_planner_create`] and not yet
+/// destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_destroy(planner: *mut Planner) {
+    if planner.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(planner) });
+        Status::Ok
+    });
+}
+
+/// Adds one track to the library the planner chooses from.
+///
+/// `key_confidence` at or below zero means the key is unknown. `has_vocals` is
+/// `-1` for unknown, `0` for no, `1` for yes — and unknown is a different answer
+/// from no, which scores differently.
+///
+/// # Safety
+///
+/// `planner` must be live.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a candidate is what the analysis found out about a track; a \
+              repr(C) struct here would be a permanent layout promise"
+)]
+pub unsafe extern "C" fn prv_planner_add_candidate(
+    planner: *mut Planner,
+    track: u64,
+    duration: i64,
+    bpm: f64,
+    energy: f32,
+    key_semitones: i32,
+    key_is_minor: i32,
+    key_confidence: f32,
+    loudness_lufs: f32,
+    has_vocals: i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        planner.add_candidate(
+            track,
+            duration,
+            bpm,
+            energy,
+            key_semitones,
+            key_is_minor != 0,
+            key_confidence,
+            loudness_lufs,
+            has_vocals,
+        )
+    })
+    .code()
+}
+
+/// Adds a place the analysis says a track can be left or entered.
+///
+/// # Safety
+///
+/// `planner` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_add_mix_point(
+    planner: *mut Planner,
+    track: u64,
+    position: i64,
+    energy: f32,
+    is_exit: i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        planner.add_mix_point(track, position, energy, is_exit != 0)
+    })
+    .code()
+}
+
+/// Reads how many candidates the library holds.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_candidate_count(
+    planner: *const Planner,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        // SAFETY: as above.
+        let slot = unsafe { as_mut(out_count) }?;
+        *slot = planner.candidate_count();
+        Ok(())
+    })
+    .code()
+}
+
+/// Forgets the library and any plan made from it.
+///
+/// # Safety
+///
+/// `planner` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_clear(planner: *mut Planner) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        planner.clear();
+        Ok(())
+    })
+    .code()
+}
+
+/// Plans up to three genuinely different sets.
+///
+/// Pass zero for both tempo bounds to leave the range open. Half a range is
+/// treated as no range, because honouring it would constrain a set in a way
+/// nobody asked for.
+///
+/// Writes how many alternatives were produced. Returns `PRV_REFUSED` when no set
+/// could be built, which is a real answer about the library rather than a
+/// malfunction.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_count` writable.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a goal is what the user asked for, and its parts are independent"
+)]
+pub unsafe extern "C" fn prv_planner_plan(
+    planner: *mut Planner,
+    target_frames: i64,
+    sample_rate: u32,
+    shape: i32,
+    creativity: i32,
+    tempo_floor: f32,
+    tempo_ceiling: f32,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        // SAFETY: as above.
+        let slot = unsafe { as_mut(out_count) }?;
+        *slot = 0;
+        *slot = planner.plan(
+            target_frames,
+            sample_rate,
+            shape,
+            creativity,
+            tempo_floor,
+            tempo_ceiling,
+        )?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Chooses which alternative subsequent reads describe.
+///
+/// # Safety
+///
+/// `planner` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_select(planner: *mut Planner, index: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        planner.select(index)
+    })
+    .code()
+}
+
+/// Reads how many tracks the selected plan holds.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_track_count(
+    planner: *const Planner,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        // SAFETY: as above.
+        let slot = unsafe { as_mut(out_count) }?;
+        *slot = planner.track_count()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads how long the selected plan runs for, in frames.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_duration` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_duration(
+    planner: *const Planner,
+    out_duration: *mut i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        // SAFETY: as above.
+        let slot = unsafe { as_mut(out_duration) }?;
+        *slot = planner.duration()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the selected plan's mean transition score, from zero to one.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_score` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_score(planner: *const Planner, out_score: *mut f32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        // SAFETY: as above.
+        let slot = unsafe { as_mut(out_score) }?;
+        *slot = planner.score()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads one track of the selected plan.
+///
+/// The score is the move *into* this track, and is 1.0 for the opening track,
+/// which was chosen rather than transitioned into.
+///
+/// # Safety
+///
+/// `planner` must be live and every out-parameter writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_track(
+    planner: *const Planner,
+    index: u64,
+    out_track: *mut u64,
+    out_start: *mut i64,
+    out_duration: *mut i64,
+    out_score: *mut f32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        let (track, start, duration, score) = planner.track(index)?;
+        // SAFETY: as above, for each out-parameter.
+        unsafe {
+            *as_mut(out_track)? = track;
+            *as_mut(out_start)? = start;
+            *as_mut(out_duration)? = duration;
+            *as_mut(out_score)? = score;
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Applies the selected plan to an engine's project.
+///
+/// The plan becomes ordinary operations on the log — the same ones a hand-made
+/// edit produces. Master Prompt #3B requires the user to be able to edit
+/// everything the system decides, and after this call there is nothing to
+/// distinguish a generated placement from one somebody dragged.
+///
+/// # Safety
+///
+/// `planner` and `engine` must both be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_apply(
+    planner: *const Planner,
+    engine: *mut Engine,
+    timestamp_micros: i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_ref(planner) }?;
+        // SAFETY: as above.
+        let engine = unsafe { as_mut(engine) }?;
+        engine.apply_plan(planner, timestamp_micros)
     })
     .code()
 }

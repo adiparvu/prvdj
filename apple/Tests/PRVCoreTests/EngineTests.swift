@@ -267,3 +267,191 @@ struct EngineTests {
         #expect(!PlaybackState.paused.isAudible)
     }
 }
+
+@Suite("Planning a set")
+struct PlannerTests {
+
+    /// Twelve mutually compatible five-minute records at 48 kHz.
+    private static let trackFrames: Int64 = 48_000 * 300
+
+    private func library(_ planner: Planner, count: UInt64 = 12) throws {
+        for index in 0..<count {
+            // Keys adjacent on the wheel and tempi within a couple of per cent,
+            // so neither is the binding constraint on what can follow what.
+            let semitones: Int32 = [9, 4, 2][Int(index % 3)]
+            try planner.add(
+                Candidate(
+                    track: index,
+                    duration: Self.trackFrames,
+                    bpm: 126 + Double(index % 3),
+                    energy: 0.3 + 0.05 * Float(index % 12),
+                    key: Candidate.Key(semitones: semitones, isMinor: true),
+                    loudnessLUFS: -8,
+                    hasVocals: false
+                )
+            )
+        }
+    }
+
+    @Test("a library plans a set that can be read back as a tracklist")
+    func planAndRead() throws {
+        let planner = try Planner()
+        try library(planner)
+        #expect(try planner.candidateCount() == 12)
+
+        let alternatives = try planner.plan(
+            targetFrames: Self.trackFrames * 6,
+            sampleRate: 48_000,
+            shape: .arc
+        )
+        #expect(alternatives >= 1)
+
+        let tracks = try planner.tracks()
+        #expect(tracks.count >= 2, "a set of one track is not a set")
+
+        var seen = Set<UInt64>()
+        var previousStart: Int64 = -1
+        for planned in tracks {
+            #expect(seen.insert(planned.track).inserted, "a track was used twice")
+            #expect(planned.start > previousStart, "the set did not move forward")
+            #expect((0...1).contains(planned.transitionScore))
+            previousStart = planned.start
+        }
+        #expect(try planner.score() > 0)
+    }
+
+    @Test("the whole product: library, plan, timeline, audio")
+    func endToEnd() throws {
+        // Everything the application does, in the order a user does it.
+        let engine = try Engine(sampleRate: 48_000, channels: 2, maxBlockFrames: 512)
+        try engine.setSource(ConstantSource(value: 0.4, available: 8_192))
+
+        let planner = try Planner()
+        try library(planner)
+        try planner.plan(
+            targetFrames: Self.trackFrames * 6,
+            sampleRate: 48_000,
+            shape: .plateau
+        )
+
+        let planned = try planner.trackCount()
+        try planner.apply(to: engine)
+        #expect(
+            try engine.placementCount() == planned,
+            "the project does not hold the set that was planned"
+        )
+
+        try engine.apply(.load)
+        try engine.apply(.loadSucceeded)
+        try engine.apply(.play)
+
+        var block = [Float](repeating: 0, count: 2 * 256)
+        try block.withUnsafeMutableBufferPointer { buffer in
+            try engine.render(into: buffer, channels: 2, frames: 256)
+        }
+        #expect(block.contains { $0 != 0 }, "a planned, applied set rendered silence")
+    }
+
+    @Test("a library with nothing in it is refused rather than returning no set")
+    func emptyLibraryIsRefused() throws {
+        // A real answer about the library. An empty plan would make "nothing you
+        // own fits" indistinguishable from success.
+        let planner = try Planner()
+        #expect(throws: EngineError.refused) {
+            try planner.plan(targetFrames: 1_000_000, sampleRate: 48_000, shape: .rising)
+        }
+    }
+
+    @Test("reading a plan before making one says so")
+    func readingBeforePlanning() throws {
+        let planner = try Planner()
+        #expect(throws: EngineError.invalidState) { try planner.trackCount() }
+        #expect(throws: EngineError.invalidState) { try planner.duration() }
+    }
+
+    @Test("an alternative that does not exist is refused")
+    func selectingOutOfRange() throws {
+        let planner = try Planner()
+        try library(planner)
+        let count = try planner.plan(
+            targetFrames: Self.trackFrames * 4,
+            sampleRate: 48_000,
+            shape: .rising
+        )
+        for index in 0..<count {
+            try planner.select(index)
+            #expect(try planner.trackCount() > 0)
+        }
+        #expect(throws: EngineError.invalidArgument) { try planner.select(count) }
+    }
+
+    @Test("a track with no key known is not a track known to have no key")
+    func unknownKeyIsNotAbsentKey() throws {
+        // `nil` maps to zero confidence, which the core scores as neutral rather
+        // than as perfect. Getting this backwards would make an unanalysed
+        // library look like a perfectly harmonic one.
+        let planner = try Planner()
+        try planner.add(
+            Candidate(track: 1, duration: Self.trackFrames, bpm: 128, energy: 0.5)
+        )
+        #expect(try planner.candidateCount() == 1)
+    }
+
+    @Test("records that hand over early make a shorter set")
+    func exitPointsShortenTheSet() throws {
+        // The pacing rule, reachable from Swift. If the planner and the renderer
+        // ever disagree about this again, it will be across two languages.
+        let plain = try Planner()
+        try library(plain)
+        try plain.plan(
+            targetFrames: Self.trackFrames * 6,
+            sampleRate: 48_000,
+            shape: .plateau
+        )
+        let without = try plain.duration()
+
+        let early = try Planner()
+        try library(early)
+        for index in 0..<UInt64(12) {
+            try early.add(
+                MixPoint(
+                    track: index,
+                    position: Self.trackFrames / 4,
+                    energy: 0.05,
+                    isExit: true
+                )
+            )
+        }
+        try early.plan(
+            targetFrames: Self.trackFrames * 6,
+            sampleRate: 48_000,
+            shape: .plateau
+        )
+
+        #expect(try early.duration() < without)
+    }
+
+    @Test("a mix point for a track nobody added is refused")
+    func mixPointForUnknownTrack() throws {
+        // A host calling in the wrong order. Ignoring it would lose the analysis
+        // and nothing would say why the transitions came out worse.
+        let planner = try Planner()
+        #expect(throws: EngineError.invalidHandle) {
+            try planner.add(MixPoint(track: 99, position: 1_000, energy: 0.1, isExit: true))
+        }
+    }
+
+    @Test("a fact the planner cannot use is refused at the door")
+    func unusableFacts() throws {
+        let planner = try Planner()
+        #expect(throws: EngineError.invalidArgument) {
+            try planner.add(Candidate(track: 1, duration: 0, bpm: 128, energy: 0.5))
+        }
+        #expect(throws: EngineError.invalidArgument) {
+            try planner.add(
+                Candidate(track: 1, duration: Self.trackFrames, bpm: 0, energy: 0.5)
+            )
+        }
+        #expect(try planner.candidateCount() == 0, "a refused candidate was kept")
+    }
+}

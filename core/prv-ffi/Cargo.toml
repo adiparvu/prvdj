@@ -21,6 +21,9 @@ repository.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+prv-analysis = { path = "../prv-analysis" }
+prv-harmony = { path = "../prv-harmony" }
+prv-mix = { path = "../prv-mix" }
 prv-project = { path = "../prv-project" }
 prv-render = { path = "../prv-render" }
 prv-rt = { path = "../prv-rt" }

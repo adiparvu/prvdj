@@ -62,6 +62,7 @@
 //! | [`status`] | What can go wrong, and how is it reported? |
 //! | [`mapping`] | What integer does the core's enum have across C? |
 //! | [`engine`] | What does a host hold, and what can it ask? |
+//! | [`planning`] | How does a host get a set planned? |
 //! | [`exports`] | The functions themselves. |
 //!
 //! # The header is generated
@@ -85,9 +86,11 @@ pub mod engine;
 pub mod exports;
 mod guard;
 pub mod mapping;
+pub mod planning;
 pub mod status;
 
 pub use engine::{Engine, ReadAudio, MAX_BLOCK_FRAMES, MAX_CHANNELS};
+pub use planning::Planner;
 pub use status::Status;
 
 #[cfg(test)]
@@ -102,13 +105,16 @@ mod tests {
     use super::*;
     use crate::exports::{
         prv_abi_version, prv_engine_create, prv_engine_destroy, prv_engine_place_track,
-        prv_engine_playback_state, prv_engine_position, prv_engine_render,
-        prv_engine_render_was_complete, prv_engine_seek, prv_engine_set_source,
+        prv_engine_placement_count, prv_engine_playback_state, prv_engine_position,
+        prv_engine_render, prv_engine_render_was_complete, prv_engine_seek, prv_engine_set_source,
         prv_engine_transport,
     };
 
     /// Frames of test tone the fake host holds.
     const TONE_FRAMES: usize = 4_096;
+
+    /// Five minutes at 48 kHz, the rate every engine in these tests runs at.
+    const TRACK: i64 = 48_000 * 300;
 
     /// A host-side audio source, in the shape a real one has.
     struct FakeHost {
@@ -457,6 +463,176 @@ mod tests {
 
         // SAFETY: destroyed once.
         unsafe { prv_engine_destroy(handle) };
+    }
+
+    #[test]
+    fn the_whole_product_in_one_test_library_to_plan_to_timeline_to_audio() {
+        // The loop the product exists for, entirely across the boundary: a host
+        // describes its library, asks for a set, gets one, applies it to the
+        // project, and hears it.
+        use crate::exports::{
+            prv_planner_add_candidate, prv_planner_apply, prv_planner_create, prv_planner_destroy,
+            prv_planner_plan, prv_planner_track_count,
+        };
+
+        let handle = engine();
+        let mut host = FakeHost {
+            value: 0.4,
+            available: TONE_FRAMES,
+            calls: 0,
+        };
+        // SAFETY: `handle` is live and `host` outlives every call below.
+        unsafe {
+            prv_engine_set_source(
+                handle,
+                Some(read_audio),
+                (&raw mut host).cast::<core::ffi::c_void>(),
+            )
+        };
+
+        let mut planner: *mut crate::Planner = core::ptr::null_mut();
+        // SAFETY: `planner` is a live local.
+        assert_eq!(
+            unsafe { prv_planner_create(&raw mut planner) },
+            Status::Ok.code()
+        );
+
+        // Five minutes each, all mutually compatible.
+        for index in 0..12_u64 {
+            let semitones = match index % 3 {
+                0 => 9,
+                1 => 4,
+                _ => 2,
+            };
+            // SAFETY: `planner` is live.
+            let status = unsafe {
+                prv_planner_add_candidate(
+                    planner, index, TRACK, 128.0, 0.6, semitones, 1, 1.0, -8.0, 0,
+                )
+            };
+            assert_eq!(status, Status::Ok.code(), "candidate {index} was refused");
+        }
+
+        let mut alternatives = 0_u64;
+        // SAFETY: `planner` is live and `alternatives` is a live local.
+        let status = unsafe {
+            prv_planner_plan(
+                planner,
+                TRACK * 6,
+                48_000,
+                2,
+                1,
+                0.0,
+                0.0,
+                &raw mut alternatives,
+            )
+        };
+        assert_eq!(status, Status::Ok.code(), "the library would not plan");
+        assert!(alternatives >= 1);
+
+        let mut tracks = 0_u64;
+        // SAFETY: both pointers are live.
+        unsafe { prv_planner_track_count(planner, &raw mut tracks) };
+        assert!(tracks >= 2, "a set of one track is not a set");
+
+        // SAFETY: both handles are live.
+        let status = unsafe { prv_planner_apply(planner, handle, 1_000) };
+        assert_eq!(status, Status::Ok.code(), "the plan would not apply");
+
+        // The project now holds the set, as ordinary placements.
+        let mut placements = 0_u64;
+        // SAFETY: `handle` is live and `placements` is a live local.
+        unsafe { prv_engine_placement_count(handle, &raw mut placements) };
+        assert_eq!(
+            placements, tracks,
+            "the project does not hold the set that was planned"
+        );
+
+        // And it plays.
+        for event in [0_i32, 1, 4] {
+            // SAFETY: `handle` is live.
+            assert_eq!(
+                unsafe { prv_engine_transport(handle, event) },
+                Status::Ok.code()
+            );
+        }
+        let mut block = vec![0.0_f32; 2 * 256];
+        // SAFETY: `handle` is live and `block` holds 2 * 256 floats.
+        let status = unsafe { prv_engine_render(handle, block.as_mut_ptr(), 2, 256) };
+        assert_eq!(status, Status::Ok.code());
+        assert!(
+            block.iter().any(|sample| *sample != 0.0),
+            "a planned, applied set rendered silence"
+        );
+
+        // SAFETY: each handle is destroyed exactly once.
+        unsafe {
+            prv_planner_destroy(planner);
+            prv_engine_destroy(handle);
+        }
+    }
+
+    #[test]
+    fn applying_a_plan_twice_does_not_reuse_a_placement_identity() {
+        // ADR-0003: an identity is never handed out twice. Reusing one would
+        // make the merge drop the second set as "already present", and the user
+        // would see a successful edit with half the work missing.
+        use crate::exports::{
+            prv_planner_add_candidate, prv_planner_apply, prv_planner_create, prv_planner_destroy,
+            prv_planner_plan,
+        };
+
+        let handle = engine();
+        let mut planner: *mut crate::Planner = core::ptr::null_mut();
+        // SAFETY: `planner` is a live local.
+        unsafe { prv_planner_create(&raw mut planner) };
+
+        for index in 0..8_u64 {
+            // SAFETY: `planner` is live.
+            unsafe {
+                prv_planner_add_candidate(planner, index, TRACK, 128.0, 0.6, 9, 1, 1.0, -8.0, 0)
+            };
+        }
+        let mut alternatives = 0_u64;
+        // SAFETY: both pointers are live.
+        unsafe {
+            prv_planner_plan(
+                planner,
+                TRACK * 4,
+                48_000,
+                2,
+                1,
+                0.0,
+                0.0,
+                &raw mut alternatives,
+            )
+        };
+
+        let mut after_first = 0_u64;
+        // SAFETY: both handles are live.
+        unsafe {
+            prv_planner_apply(planner, handle, 1_000);
+            prv_engine_placement_count(handle, &raw mut after_first);
+        }
+
+        let mut after_second = 0_u64;
+        // SAFETY: as above.
+        unsafe {
+            prv_planner_apply(planner, handle, 2_000);
+            prv_engine_placement_count(handle, &raw mut after_second);
+        }
+
+        assert_eq!(
+            after_second,
+            after_first * 2,
+            "applying the same plan twice reused identities and lost placements"
+        );
+
+        // SAFETY: each handle is destroyed exactly once.
+        unsafe {
+            prv_planner_destroy(planner);
+            prv_engine_destroy(handle);
+        }
     }
 
     #[test]

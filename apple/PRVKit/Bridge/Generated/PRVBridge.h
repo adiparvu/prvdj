@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 0
+#define PRV_ABI_MINOR 1
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -85,9 +85,37 @@ typedef enum PrvTransportEvent {
     PRV_EVENT_FORCE_SIGNED = -1,
 } PrvTransportEvent;
 
+/* The shape of a set's energy over its length. */
+typedef enum PrvEnergyShape {
+    PRV_ENERGY_RISING = 0,
+    PRV_ENERGY_ARC = 1,
+    PRV_ENERGY_PLATEAU = 2,
+    PRV_ENERGY_WAVE = 3,
+    PRV_ENERGY_FALLING = 4,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_ENERGY_FORCE_SIGNED = -1,
+} PrvEnergyShape;
+
+/* How far the planner may depart from established practice.
+*
+* This never relaxes a hard constraint. A clashing key is not generated at
+* any setting; creativity widens the soft limits only. */
+typedef enum PrvCreativity {
+    PRV_CREATIVITY_CONSERVATIVE = 0,
+    PRV_CREATIVITY_BALANCED = 1,
+    PRV_CREATIVITY_ADVENTUROUS = 2,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_CREATIVITY_FORCE_SIGNED = -1,
+} PrvCreativity;
+
 /* An engine. Opaque: the host never sees inside it, which is what lets the
  * layout change without touching this header. */
 typedef struct PrvEngine PrvEngine;
+
+/* A planner: a library of candidates, and the sets planned from it. */
+typedef struct PrvPlanner PrvPlanner;
 
 /*
  * Reads audio for one track.
@@ -225,6 +253,110 @@ int32_t prv_engine_render(PrvEngine *engine, float *planar, uint32_t channels,
  * is not an error: the render happened and what was there is correct.
  */
 int32_t prv_engine_render_was_complete(const PrvEngine *engine, int32_t *out_complete);
+
+/*
+ * Creates a planner.
+ *
+ * A separate handle from the engine, deliberately. A library and a plan
+ * are not a project: a host may plan with no project open, and may keep
+ * one open while replanning.
+ */
+int32_t prv_planner_create(PrvPlanner **out_planner);
+
+/*
+ * Destroys a planner. NULL is accepted and does nothing.
+ */
+void prv_planner_destroy(PrvPlanner *planner);
+
+/*
+ * Adds one track to the library the planner chooses from.
+ *
+ * `key_confidence` at or below zero means the key is unknown. `has_vocals`
+ * is -1 for unknown, 0 for no, 1 for yes — and unknown is a different
+ * answer from no, which scores differently.
+ *
+ * Facts are arguments rather than a struct on purpose: a struct here would
+ * be a permanent layout promise, and the first field anybody wants to add
+ * next year would break every host compiled against it.
+ */
+int32_t prv_planner_add_candidate(PrvPlanner *planner, uint64_t track, int64_t duration,
+                                  double bpm, float energy, int32_t key_semitones,
+                                  int32_t key_is_minor, float key_confidence,
+                                  float loudness_lufs, int32_t has_vocals);
+
+/*
+ * Adds a place the analysis says a track can be left or entered.
+ *
+ * A track with no exit point is mixed out of near its end, which the
+ * planner treats as a real answer rather than a missing one.
+ */
+int32_t prv_planner_add_mix_point(PrvPlanner *planner, uint64_t track, int64_t position,
+                                  float energy, int32_t is_exit);
+
+/*
+ * Reads how many candidates the library holds.
+ */
+int32_t prv_planner_candidate_count(const PrvPlanner *planner, uint64_t *out_count);
+
+/*
+ * Forgets the library and any plan made from it.
+ */
+int32_t prv_planner_clear(PrvPlanner *planner);
+
+/*
+ * Plans up to three genuinely different sets.
+ *
+ * Pass zero for both tempo bounds to leave the range open; half a range is
+ * treated as no range, because honouring it would constrain the set in a
+ * way nobody asked for.
+ *
+ * Returns PRV_REFUSED when no set could be built. That is a real answer
+ * about the library — nothing in it fits — not a malfunction.
+ */
+int32_t prv_planner_plan(PrvPlanner *planner, int64_t target_frames,
+                         uint32_t sample_rate, int32_t shape, int32_t creativity,
+                         float tempo_floor, float tempo_ceiling, uint64_t *out_count);
+
+/*
+ * Chooses which alternative subsequent reads describe.
+ */
+int32_t prv_planner_select(PrvPlanner *planner, uint64_t index);
+
+/*
+ * Reads how many tracks the selected plan holds.
+ */
+int32_t prv_planner_track_count(const PrvPlanner *planner, uint64_t *out_count);
+
+/*
+ * Reads how long the selected plan runs for, in frames.
+ */
+int32_t prv_planner_duration(const PrvPlanner *planner, int64_t *out_duration);
+
+/*
+ * Reads the selected plan's mean transition score, from zero to one.
+ */
+int32_t prv_planner_score(const PrvPlanner *planner, float *out_score);
+
+/*
+ * Reads one track of the selected plan.
+ *
+ * The score is the move *into* this track, and is 1.0 for the opening
+ * track, which was chosen rather than transitioned into.
+ */
+int32_t prv_planner_track(const PrvPlanner *planner, uint64_t index, uint64_t *out_track,
+                          int64_t *out_start, int64_t *out_duration, float *out_score);
+
+/*
+ * Applies the selected plan to an engine's project.
+ *
+ * The plan becomes ordinary operations on the log — the same ones a
+ * hand-made edit produces. After this there is nothing in the document
+ * that says which placements a person made and which the planner did,
+ * which is what makes a generated mix editable rather than merely
+ * promised to be.
+ */
+int32_t prv_planner_apply(const PrvPlanner *planner, PrvEngine *engine,
+                          int64_t timestamp_micros);
 
 #ifdef __cplusplus
 }

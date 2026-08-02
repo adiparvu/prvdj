@@ -144,6 +144,14 @@ public final class Engine {
     /// The opaque handle. Never null between `init` and `deinit`.
     private let handle: OpaquePointer
 
+    /// The handle, for the one other type in this module that needs it.
+    ///
+    /// `internal` rather than `public`: `Planner.apply(to:)` has to name the
+    /// engine it is applying to, and everything above this module should be
+    /// unable to get at a raw pointer at all. That is the whole point of the
+    /// wrapper.
+    var rawHandle: OpaquePointer { handle }
+
     /// The registered source.
     ///
     /// Held strongly and deliberately. The core keeps a raw pointer to the box

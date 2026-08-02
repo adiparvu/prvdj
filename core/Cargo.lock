@@ -188,6 +188,9 @@ dependencies = [
 name = "prv-ffi"
 version = "0.1.0"
 dependencies = [
+ "prv-analysis",
+ "prv-harmony",
+ "prv-mix",
  "prv-project",
  "prv-render",
  "prv-rt",
