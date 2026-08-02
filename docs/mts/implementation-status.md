@@ -460,6 +460,23 @@ every commit.
 | `PRVCore.Policy` | Completed | **Verified on Linux** | Both privacy questions exposed, not one |
 | ABI minor version 1.3 | Completed | Verified | Calls added, nothing existing moved |
 
+### Sprint 35 — the collection
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::collection` | Completed | Verified | Search returns a count; the host reads identities and fields by index |
+| Strings copy into caller buffers | Completed | Verified | Always terminated, even when empty; the size is reported whether or not it fitted |
+| `prv_collection_restore` | Completed | Verified | Added because a test showed the boundary had a delete with no undo |
+| `PRVCore.Collection` | Completed | **Verified on Linux** | Two-call read path; non-ASCII round-trips byte for byte |
+| ABI minor version 1.4 | Completed | Verified | Calls added, nothing existing moved |
+
+A test written to assert that removing a track twice fails found that it does
+not — removal is a soft delete and `restore` brings the track back with its
+rating, tags and play count. The core was right; the *boundary* was wrong,
+because it exposed the removal and not the restore. Every host would have had a
+destructive action with no way back, which is the opposite of Master Prompt #9
+whatever it was called.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

@@ -172,6 +172,9 @@ did not have would be worse than no row at all.
 | The audio thread cannot reach a non-realtime call | ADR-0002 | `PRVCore.RenderHandle` | enforced by the type; `PRVKit.Session` compiles only through it | **Enforced** |
 | The application workflow | MP#3B, MS#001 | `PRVKit.Session` | `wholeWorkflow`, `shortTrackIsKept` | **Verified** |
 | Presentation holds no business rules | MP#4 | `PRVUI` models vs views | every threshold tested in `PRVUITests`; views format nothing | **Verified** |
+| A host can search the collection | MS#001 | `prv-ffi::collection` | `a_search_finds_what_the_user_typed_and_reads_back_in_order`, `searching` | **Verified** |
+| Deleting a track never destroys its metadata | MP#9, MS#001 | `prv_collection_restore` | `removing_a_track_hides_it_without_destroying_it`, `removeAndRestore` | **Verified** |
+| A string crossing the boundary is never truncated silently | MP#27 | `prv_collection_text_field` | `a_field_that_did_not_fit_reports_the_length_it_needed`, `longTitle`, `unicode` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

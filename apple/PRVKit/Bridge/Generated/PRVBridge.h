@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 3
+#define PRV_ABI_MINOR 4
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -172,6 +172,9 @@ typedef struct PrvAnalysis PrvAnalysis;
 /* What the user agreed to, and what their licence allows. */
 typedef struct PrvPolicy PrvPolicy;
 
+/* The user's music, and the last search over it. */
+typedef struct PrvCollection PrvCollection;
+
 /*
  * Reads audio for one track.
  *
@@ -192,6 +195,35 @@ typedef uint32_t (*PrvReadAudio)(void *user_data,
                                  uint32_t capacity,
                                  uint32_t destination,
                                  uint32_t frames);
+
+/* How a list of tracks is ordered. */
+typedef enum PrvSortKey {
+    PRV_SORT_TITLE = 0,
+    PRV_SORT_ARTIST = 1,
+    PRV_SORT_ALBUM = 2,
+    PRV_SORT_DATE_ADDED = 3,
+    PRV_SORT_LAST_PLAYED = 4,
+    PRV_SORT_PLAY_COUNT = 5,
+    PRV_SORT_RATING = 6,
+    PRV_SORT_DURATION = 7,
+    PRV_SORT_TEMPO = 8,
+    PRV_SORT_ENERGY = 9,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_SORT_FORCE_SIGNED = -1,
+} PrvSortKey;
+
+/* Which text field of a track to read. */
+typedef enum PrvTextField {
+    PRV_FIELD_TITLE = 0,
+    PRV_FIELD_ARTIST = 1,
+    PRV_FIELD_ALBUM = 2,
+    PRV_FIELD_GENRE = 3,
+    PRV_FIELD_MEDIA = 4,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_FIELD_FORCE_SIGNED = -1,
+} PrvTextField;
 
 /*
  * The version of this boundary, packed as major << 16 | minor << 8 | patch.
@@ -575,6 +607,88 @@ int32_t prv_policy_feature_allowed(const PrvPolicy *policy, int32_t feature,
  */
 int32_t prv_policy_feature_is_essential(const PrvPolicy *policy, int32_t feature,
                                         int32_t *out_essential);
+
+/*
+ * Creates an empty library.
+ */
+int32_t prv_collection_create(PrvCollection **out_collection);
+
+/*
+ * Destroys a library. NULL is accepted and does nothing.
+ */
+void prv_collection_destroy(PrvCollection *collection);
+
+/*
+ * Adds a track. Strings are UTF-8 and NUL-terminated.
+ *
+ * Returns PRV_REFUSED when the identity is already in use. A re-import is
+ * not a new track, and overwriting would lose whatever the user edited.
+ */
+int32_t prv_collection_add(PrvCollection *collection, uint64_t id, const char *title,
+                           const char *artist, const char *album, const char *media,
+                           int64_t duration, int64_t imported_at_micros);
+
+/*
+ * Changes a track's title, artist and album. Its identity does not change.
+ */
+int32_t prv_collection_update_metadata(PrvCollection *collection, uint64_t id,
+                                       const char *title, const char *artist,
+                                       const char *album);
+
+/*
+ * Hides a track without destroying it.
+ *
+ * Its rating, tags and play count survive, and prv_collection_restore
+ * brings it back. Repeating the call succeeds and changes nothing.
+ */
+int32_t prv_collection_remove(PrvCollection *collection, uint64_t id);
+
+/*
+ * Brings a removed track back, with everything it had.
+ */
+int32_t prv_collection_restore(PrvCollection *collection, uint64_t id);
+
+/*
+ * How many tracks the library holds.
+ */
+int32_t prv_collection_count(const PrvCollection *collection, uint64_t *out_count);
+
+/*
+ * Runs a search and keeps the result for reading back.
+ *
+ * An empty `text` matches everything, which is what a list view showing
+ * the whole library asks for.
+ */
+int32_t prv_collection_search(PrvCollection *collection, const char *text, int32_t sort,
+                              int32_t descending, uint64_t *out_count);
+
+/*
+ * The identity of one search result.
+ */
+int32_t prv_collection_result(const PrvCollection *collection, uint64_t index,
+                              uint64_t *out_id);
+
+/*
+ * Copies one text field of a track into a caller-owned buffer.
+ *
+ * `out_needed` is how many bytes the field requires including its
+ * terminator, whether or not it fitted — so a caller given
+ * PRV_BUFFER_TOO_SMALL can allocate exactly and call once more rather
+ * than guessing upward. A capacity of zero asks the size and writes
+ * nothing.
+ *
+ * The result is always NUL-terminated when it fits, including when the
+ * field is empty.
+ */
+int32_t prv_collection_text_field(const PrvCollection *collection, uint64_t id,
+                                  int32_t field, uint8_t *into, uint64_t capacity,
+                                  uint64_t *out_needed);
+
+/*
+ * A track's length in frames.
+ */
+int32_t prv_collection_duration(const PrvCollection *collection, uint64_t id,
+                                int64_t *out_duration);
 
 #ifdef __cplusplus
 }

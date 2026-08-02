@@ -191,6 +191,7 @@ dependencies = [
  "prv-analysis",
  "prv-entitlements",
  "prv-harmony",
+ "prv-library",
  "prv-mix",
  "prv-project",
  "prv-render",

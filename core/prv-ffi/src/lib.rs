@@ -65,6 +65,7 @@
 //! | [`planning`] | How does a host get a set planned? |
 //! | [`analysis`] | What is this track: tempo, key, loudness, shape? |
 //! | [`policy`] | May this leave the device, and is this feature available? |
+//! | [`collection`] | What music does the user have, and what did they search for? |
 //! | [`exports`] | The functions themselves. |
 //!
 //! # The header is generated
@@ -85,6 +86,7 @@
 
 pub mod abi;
 pub mod analysis;
+pub mod collection;
 pub mod engine;
 pub mod exports;
 mod guard;
@@ -94,6 +96,7 @@ pub mod policy;
 pub mod status;
 
 pub use analysis::Analysis;
+pub use collection::Collection;
 pub use engine::{Engine, ReadAudio, MAX_BLOCK_FRAMES, MAX_CHANNELS};
 pub use planning::Planner;
 pub use policy::Policy;

@@ -17,6 +17,7 @@
 
 use crate::abi;
 use crate::analysis::Analysis;
+use crate::collection::Collection;
 use crate::engine::{Engine, ReadAudio};
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
@@ -1182,6 +1183,307 @@ pub unsafe extern "C" fn prv_policy_feature_is_essential(
         let essential = unsafe { as_ref(policy) }?.feature_is_essential(feature)?;
         // SAFETY: as above.
         *unsafe { as_mut(out_essential) }? = i32::from(essential);
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// The collection
+//
+// A search returns a count; the host reads identities back by index and asks
+// for whichever fields it is about to draw. A list view asks for three fields
+// per visible row and nothing for the rows it is not showing.
+// ---------------------------------------------------------------------------
+
+/// Creates an empty library.
+///
+/// # Safety
+///
+/// `out_collection` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_create(out_collection: *mut *mut Collection) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_collection) }?;
+        *slot = core::ptr::null_mut();
+        *slot = Box::into_raw(Box::new(Collection::new()));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys a library. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `collection` must come from [`prv_collection_create`] and not yet be
+/// destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_destroy(collection: *mut Collection) {
+    if collection.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(collection) });
+        Status::Ok
+    });
+}
+
+/// Reads a NUL-terminated C string into a Rust one.
+///
+/// Returns [`Status::NullPointer`] for null and [`Status::InvalidArgument`] for
+/// bytes that are not UTF-8 — refused rather than replaced, because a title
+/// silently rewritten with replacement characters is a title the user cannot
+/// search for and cannot see why.
+///
+/// # Safety
+///
+/// `text` must be null or point to a NUL-terminated string.
+unsafe fn borrow_str<'a>(text: *const core::ffi::c_char) -> Result<&'a str, Status> {
+    if text.is_null() {
+        return Err(Status::NullPointer);
+    }
+    // SAFETY: the caller promises a NUL-terminated string.
+    let raw = unsafe { core::ffi::CStr::from_ptr(text) };
+    raw.to_str().map_err(|_| Status::InvalidArgument)
+}
+
+/// Adds a track.
+///
+/// # Safety
+///
+/// `collection` must be live and every string NUL-terminated.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a track is what a file told us about itself; a repr(C) struct \
+              would be a permanent layout promise about a type that exists to grow"
+)]
+pub unsafe extern "C" fn prv_collection_add(
+    collection: *mut Collection,
+    id: u64,
+    title: *const core::ffi::c_char,
+    artist: *const core::ffi::c_char,
+    album: *const core::ffi::c_char,
+    media: *const core::ffi::c_char,
+    duration: i64,
+    imported_at_micros: i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract, for the handle and each
+        // string.
+        unsafe {
+            as_mut(collection)?.add(
+                id,
+                borrow_str(title)?,
+                borrow_str(artist)?,
+                borrow_str(album)?,
+                borrow_str(media)?,
+                duration,
+                imported_at_micros,
+            )
+        }
+    })
+    .code()
+}
+
+/// Changes a track's title, artist and album.
+///
+/// # Safety
+///
+/// `collection` must be live and every string NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_update_metadata(
+    collection: *mut Collection,
+    id: u64,
+    title: *const core::ffi::c_char,
+    artist: *const core::ffi::c_char,
+    album: *const core::ffi::c_char,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe {
+            as_mut(collection)?.update_metadata(
+                id,
+                borrow_str(title)?,
+                borrow_str(artist)?,
+                borrow_str(album)?,
+            )
+        }
+    })
+    .code()
+}
+
+/// Hides a track without destroying it.
+///
+/// Its rating, tags and play count survive, and [`prv_collection_restore`]
+/// brings it back. Repeating the call succeeds and changes nothing.
+///
+/// # Safety
+///
+/// `collection` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_remove(collection: *mut Collection, id: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(collection) }?.remove(id)
+    })
+    .code()
+}
+
+/// Brings a removed track back, with everything it had.
+///
+/// # Safety
+///
+/// `collection` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_restore(collection: *mut Collection, id: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(collection) }?.restore(id)
+    })
+    .code()
+}
+
+/// How many tracks the library holds.
+///
+/// # Safety
+///
+/// `collection` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_count(
+    collection: *const Collection,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let count = unsafe { as_ref(collection) }?.len();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = count;
+        Ok(())
+    })
+    .code()
+}
+
+/// Runs a search and keeps the result for reading back.
+///
+/// An empty `text` matches everything, which is what a list view showing the
+/// whole library asks for.
+///
+/// # Safety
+///
+/// `collection` must be live, `text` NUL-terminated, `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_search(
+    collection: *mut Collection,
+    text: *const core::ffi::c_char,
+    sort: i32,
+    descending: i32,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let found = unsafe {
+            let text = borrow_str(text)?;
+            as_mut(collection)?.search(text, sort, descending != 0)?
+        };
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = found;
+        Ok(())
+    })
+    .code()
+}
+
+/// The identity of one search result.
+///
+/// # Safety
+///
+/// `collection` must be live and `out_id` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_result(
+    collection: *const Collection,
+    index: u64,
+    out_id: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let id = unsafe { as_ref(collection) }?.result(index)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_id) }? = id;
+        Ok(())
+    })
+    .code()
+}
+
+/// Copies one text field of a track into a caller-owned buffer.
+///
+/// Writes to `out_needed` how many bytes the field requires including its
+/// terminator, whether or not it fitted. A caller whose buffer was too small can
+/// therefore allocate exactly and call once more, rather than guessing upward.
+///
+/// The string is always NUL-terminated when it fits, including when it is empty.
+///
+/// # Safety
+///
+/// `collection` must be live, `into` writable for `capacity` bytes, and
+/// `out_needed` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_text_field(
+    collection: *const Collection,
+    id: u64,
+    field: i32,
+    into: *mut u8,
+    capacity: u64,
+    out_needed: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let collection = unsafe { as_ref(collection) }?;
+        let capacity = usize::try_from(capacity).map_err(|_| Status::InvalidArgument)?;
+        if into.is_null() && capacity != 0 {
+            return Err(Status::NullPointer);
+        }
+
+        // A zero capacity is how a caller asks "how big is this" without
+        // providing anywhere to put it, so an empty slice is the honest
+        // representation rather than a dangling one.
+        let buffer: &mut [u8] = if capacity == 0 {
+            &mut []
+        } else {
+            // SAFETY: the caller promises `into` is writable for `capacity`
+            // bytes; the slice is used only within this call.
+            unsafe { core::slice::from_raw_parts_mut(into, capacity) }
+        };
+
+        let needed = collection.text_field(id, field, buffer)?;
+        // SAFETY: the caller's documented contract.
+        *unsafe { as_mut(out_needed) }? = needed.try_into().unwrap_or(u64::MAX);
+        if needed > capacity {
+            return Err(Status::BufferTooSmall);
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// A track's length in frames.
+///
+/// # Safety
+///
+/// `collection` must be live and `out_duration` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_collection_duration(
+    collection: *const Collection,
+    id: u64,
+    out_duration: *mut i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let duration = unsafe { as_ref(collection) }?.duration(id)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_duration) }? = duration;
         Ok(())
     })
     .code()

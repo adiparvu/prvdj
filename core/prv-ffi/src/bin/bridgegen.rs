@@ -44,6 +44,7 @@
 use std::fmt::Write as _;
 use std::process::ExitCode;
 
+use prv_ffi::collection::{SORT_KEYS, TEXT_FIELDS};
 use prv_ffi::mapping::{PLAYBACK_STATES, TRANSPORT_EVENTS};
 use prv_ffi::planning::{CREATIVITY_SETTINGS, ENERGY_SHAPES};
 use prv_ffi::policy::{purpose_code, tier_code};
@@ -197,6 +198,52 @@ fn declarations() -> Vec<Declaration> {
         prv_ffi::exports::prv_policy_feature_allowed;
     let _: unsafe extern "C" fn(*const prv_ffi::Policy, i32, *mut i32) -> i32 =
         prv_ffi::exports::prv_policy_feature_is_essential;
+    let _: unsafe extern "C" fn(*mut *mut prv_ffi::Collection) -> i32 =
+        prv_ffi::exports::prv_collection_create;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Collection) =
+        prv_ffi::exports::prv_collection_destroy;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Collection,
+        u64,
+        *const core::ffi::c_char,
+        *const core::ffi::c_char,
+        *const core::ffi::c_char,
+        *const core::ffi::c_char,
+        i64,
+        i64,
+    ) -> i32 = prv_ffi::exports::prv_collection_add;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Collection,
+        u64,
+        *const core::ffi::c_char,
+        *const core::ffi::c_char,
+        *const core::ffi::c_char,
+    ) -> i32 = prv_ffi::exports::prv_collection_update_metadata;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Collection, u64) -> i32 =
+        prv_ffi::exports::prv_collection_remove;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Collection, u64) -> i32 =
+        prv_ffi::exports::prv_collection_restore;
+    let _: unsafe extern "C" fn(*const prv_ffi::Collection, *mut u64) -> i32 =
+        prv_ffi::exports::prv_collection_count;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Collection,
+        *const core::ffi::c_char,
+        i32,
+        i32,
+        *mut u64,
+    ) -> i32 = prv_ffi::exports::prv_collection_search;
+    let _: unsafe extern "C" fn(*const prv_ffi::Collection, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_collection_result;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Collection,
+        u64,
+        i32,
+        *mut u8,
+        u64,
+        *mut u64,
+    ) -> i32 = prv_ffi::exports::prv_collection_text_field;
+    let _: unsafe extern "C" fn(*const prv_ffi::Collection, u64, *mut i64) -> i32 =
+        prv_ffi::exports::prv_collection_duration;
 
     vec![
         Declaration {
@@ -598,6 +645,85 @@ fn declarations() -> Vec<Declaration> {
                 "upsell, and a host should say so differently.",
             ],
         },
+        Declaration {
+            signature: "int32_t prv_collection_create(PrvCollection **out_collection)",
+            doc: &["Creates an empty library."],
+        },
+        Declaration {
+            signature: "void prv_collection_destroy(PrvCollection *collection)",
+            doc: &["Destroys a library. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_add(PrvCollection *collection, uint64_t id, \
+                        const char *title, const char *artist, const char *album, \
+                        const char *media, int64_t duration, int64_t imported_at_micros)",
+            doc: &[
+                "Adds a track. Strings are UTF-8 and NUL-terminated.",
+                "",
+                "Returns PRV_REFUSED when the identity is already in use. A re-import is",
+                "not a new track, and overwriting would lose whatever the user edited.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_update_metadata(PrvCollection *collection, \
+                        uint64_t id, const char *title, const char *artist, const char *album)",
+            doc: &["Changes a track's title, artist and album. Its identity does not change."],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_remove(PrvCollection *collection, uint64_t id)",
+            doc: &[
+                "Hides a track without destroying it.",
+                "",
+                "Its rating, tags and play count survive, and prv_collection_restore",
+                "brings it back. Repeating the call succeeds and changes nothing.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_restore(PrvCollection *collection, uint64_t id)",
+            doc: &["Brings a removed track back, with everything it had."],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_count(const PrvCollection *collection, \
+                        uint64_t *out_count)",
+            doc: &["How many tracks the library holds."],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_search(PrvCollection *collection, \
+                        const char *text, int32_t sort, int32_t descending, uint64_t *out_count)",
+            doc: &[
+                "Runs a search and keeps the result for reading back.",
+                "",
+                "An empty `text` matches everything, which is what a list view showing",
+                "the whole library asks for.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_result(const PrvCollection *collection, \
+                        uint64_t index, uint64_t *out_id)",
+            doc: &["The identity of one search result."],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_text_field(const PrvCollection *collection, \
+                        uint64_t id, int32_t field, uint8_t *into, uint64_t capacity, \
+                        uint64_t *out_needed)",
+            doc: &[
+                "Copies one text field of a track into a caller-owned buffer.",
+                "",
+                "`out_needed` is how many bytes the field requires including its",
+                "terminator, whether or not it fitted — so a caller given",
+                "PRV_BUFFER_TOO_SMALL can allocate exactly and call once more rather",
+                "than guessing upward. A capacity of zero asks the size and writes",
+                "nothing.",
+                "",
+                "The result is always NUL-terminated when it fits, including when the",
+                "field is empty.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_collection_duration(const PrvCollection *collection, \
+                        uint64_t id, int64_t *out_duration)",
+            doc: &["A track's length in frames."],
+        },
     ]
 }
 
@@ -727,6 +853,28 @@ fn emit_types(out: &mut String) {
     );
 
     emit_domain_enums(out);
+
+    emit_enum(
+        out,
+        "/* How a list of tracks is ordered. */",
+        "PrvSortKey",
+        "PRV_SORT_FORCE_SIGNED",
+        SORT_KEYS
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* Which text field of a track to read. */",
+        "PrvTextField",
+        "PRV_FIELD_FORCE_SIGNED",
+        TEXT_FIELDS
+            .iter()
+            .enumerate()
+            .map(|(index, name)| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
 }
 
 /// Emits the enums that name things in the product rather than in the boundary.
@@ -818,6 +966,9 @@ typedef struct PrvAnalysis PrvAnalysis;
 
 /* What the user agreed to, and what their licence allows. */
 typedef struct PrvPolicy PrvPolicy;
+
+/* The user's music, and the last search over it. */
+typedef struct PrvCollection PrvCollection;
 
 ",
     );
