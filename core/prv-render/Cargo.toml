@@ -1,0 +1,18 @@
+[package]
+name = "prv-render"
+description = "Turning a project into audio — deterministic, block-size independent, and honest about what it could not read."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-project = { path = "../prv-project" }
+prv-rt = { path = "../prv-rt" }
+prv-timeline = { path = "../prv-timeline" }
+prv-time = { path = "../prv-time" }
+
+[lints]
+workspace = true

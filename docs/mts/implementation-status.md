@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 26._
+_Last updated: Sprint 27._
 
 ## Sprint 0 — Foundation
 
@@ -301,6 +301,17 @@ _Last updated: Sprint 26._
 | `ProjectState::inverses_of` | Completed | Verified | An inverse may need more than one operation; undoing a removal restores the source offset |
 | `Timeline::add` records the source offset | Completed | Verified | A clip added with one no longer reloads at zero |
 | An undo that would revert another device is refused | Completed | Verified | `Undo::Superseded` names who, rather than discarding their work silently |
+
+## Sprint 27 — The render path, and the branch collision
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-render::Source` port | Completed | Verified | The core decides which audio; the platform reads it |
+| `prv-render::Renderer` | Completed | Verified | Identical output at block sizes from 1 to 1024 |
+| Automated level, per sample | Completed | Verified | A level held across a block is a click at the block rate |
+| Short reads reported | Completed | Verified | Named once per placement, not once per block |
+| A branch no longer reuses the trunk's identities | Completed | Verified | The high-water mark of what a log has *issued*, not only what it has seen |
+| A name collision is a conflict, not a duplicate | Completed | Verified | `ConflictKind::SameNameDifferentWork`; a retried delivery stays boring |
 
 ## Where the core stands
 

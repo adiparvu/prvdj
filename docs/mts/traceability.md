@@ -79,7 +79,11 @@ did not have would be worse than no row at all.
 | A gesture of several operations gets several identities | MP#24, ADR-0003 | `prv-project::OperationLog::author_all` | `a_run_of_operations_gets_a_run_of_identities` | **Verified** |
 | An inverse may need more than one operation | MP#9, ADR-0003 | `prv-project::ProjectState::inverses_of` | `undoing_a_removal_restores_where_the_clip_began_in_its_source` | **Verified** |
 | Undo never silently discards a collaborator's work | MP#24, MP#9 | `prv-project::Undo::Superseded` | `an_undo_that_would_revert_somebody_elses_later_edit_is_refused`, `an_edit_to_something_else_does_not_block_an_undo` | **Verified** |
-| Recording and export | MP#3A | — | — | Not started |
+| A project renders to audio | MP#3A, MP#3C | `prv-render::Renderer` | `the_result_does_not_depend_on_the_block_size`, `rendering_the_same_block_twice_gives_the_same_samples` | **Verified** |
+| The render honours where a clip begins in its media | MP#3C, MP#21 | `prv-render::Renderer` | `the_source_offset_says_which_part_of_the_media_is_heard`, `overlapping_placements_sum` | **Verified** |
+| An export knows what it could not read | MP#3C | `prv-render::RenderReport` | `a_source_that_falls_short_is_reported_rather_than_silently_silent` | **Verified** |
+| Branching never loses work to a name collision | MP#9, MP#24 | `prv-project::OperationLog::branch_at` | `a_branch_never_reuses_a_name_the_trunk_already_gave_out`, `two_different_edits_under_one_name_are_reported_rather_than_dropped` | **Verified** |
+| Recording and encoding | MP#3A | — | needs a file and an encoder, both outside the core | Not started |
 
 ## Musical intelligence
 

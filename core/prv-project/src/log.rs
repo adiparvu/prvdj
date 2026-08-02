@@ -65,12 +65,29 @@ pub enum ConflictKind {
     /// Both edited the same property of the same thing, at the same time,
     /// without either author seeing the other.
     ConcurrentEdit,
+
+    /// Two different operations arrived under the same identity.
+    ///
+    /// An identity is a device and a sequence number, which is collision-free
+    /// across devices and *not* across branches of one device: two branches
+    /// taken from the same point both allocate the next number. The high-water
+    /// mark in [`OperationLog::branch_at`] removes the common case; two
+    /// independent branches of one device can still meet.
+    ///
+    /// Treating this as "already present" is what the merge used to do, and it
+    /// silently discarded the incoming work — precisely what Master Prompt #24
+    /// forbids. Reported instead, so the person who made the edit is told it
+    /// could not be applied under that name rather than watching it vanish.
+    SameNameDifferentWork,
 }
 
 impl fmt::Display for ConflictKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConcurrentEdit => f.write_str("both edited this at the same time"),
+            Self::SameNameDifferentWork => {
+                f.write_str("two different edits arrived under the same name")
+            }
         }
     }
 }
@@ -198,6 +215,13 @@ pub struct OperationLog {
     operations: Vec<Operation>,
     labels: BTreeMap<String, usize>,
     seen: VersionVector,
+    /// The highest sequence this log has ever handed out, per device.
+    ///
+    /// Distinct from `seen`, which is what it has *received*. A branch inherits
+    /// this so it never re-allocates a number the trunk already used; without
+    /// it, merging a branch back reads as "already present" and the branch's
+    /// work disappears silently.
+    issued: VersionVector,
 }
 
 impl OperationLog {
@@ -247,13 +271,24 @@ impl OperationLog {
         timestamp_micros: i64,
         payload: OperationPayload,
     ) -> Operation {
-        let sequence = self.seen.sequence_for(device).saturating_add(1);
+        let sequence = self.next_sequence_for(device);
         Operation {
             id: OperationId::new(device, sequence),
             context: self.seen.clone(),
             timestamp_micros,
             payload,
         }
+    }
+
+    /// The next sequence number this log may hand out for a device.
+    ///
+    /// The higher of what it has seen and what it has issued. The two differ
+    /// only on a branch, and that is exactly where the difference matters.
+    fn next_sequence_for(&self, device: DeviceId) -> u64 {
+        self.seen
+            .sequence_for(device)
+            .max(self.issued.sequence_for(device))
+            .saturating_add(1)
     }
 
     /// Creates a run of operations authored by one device, without appending
@@ -278,7 +313,7 @@ impl OperationLog {
         timestamp_micros: i64,
         payloads: Vec<OperationPayload>,
     ) -> Vec<Operation> {
-        let base = self.seen.sequence_for(device);
+        let base = self.next_sequence_for(device).saturating_sub(1);
         payloads
             .into_iter()
             .enumerate()
@@ -313,6 +348,9 @@ impl OperationLog {
             .operations
             .partition_point(|existing| existing.sort_key() < key);
         self.seen.observe(operation.id);
+        // A number that has been used is never handed out again, even if the log
+        // is later branched from a point before it.
+        self.issued.observe(operation.id);
         self.operations.insert(position, operation);
         Ok(position)
     }
@@ -413,6 +451,14 @@ impl OperationLog {
             branch.seen.observe(operation.id);
             branch.operations.push(operation.clone());
         }
+        // Every number this log has ever handed out, carried forward. Without
+        // it a branch taken at position one re-allocates the numbers the trunk
+        // used after that point, and merging back looks like "already present"
+        // — the branch's work disappearing without a word.
+        branch.issued.clone_from(&self.issued);
+        for operation in &self.operations {
+            branch.issued.observe(operation.id);
+        }
         Ok(branch)
     }
 
@@ -446,8 +492,25 @@ impl OperationLog {
         let mut report = MergeReport::default();
 
         for operation in incoming {
-            if self.contains(operation.id) {
-                report.already_present += 1;
+            if let Some(held) = self
+                .operations
+                .iter()
+                .find(|candidate| candidate.id == operation.id)
+            {
+                // The same name. Whether it is the same *work* decides whether
+                // this is a duplicate delivery or a collision, and the two must
+                // not be confused: one is boring and the other is somebody's
+                // edit about to disappear.
+                if held.payload == operation.payload {
+                    report.already_present += 1;
+                } else {
+                    report.conflicts.push(Conflict {
+                        existing: held.id,
+                        incoming: operation.id,
+                        target: operation.payload.target(),
+                        kind: ConflictKind::SameNameDifferentWork,
+                    });
+                }
                 continue;
             }
 
@@ -546,6 +609,12 @@ impl OperationLog {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        reason = "a test that cannot build its own fixture should fail loudly"
+    )]
+
     use super::*;
     use crate::operation::{MarkerId, MarkerKind, PlacementId, TrackRef};
     use prv_time::Frames;
@@ -1163,5 +1232,86 @@ mod tests {
             log.undo_for(device(1), 0).is_possible(),
             "an unrelated edit blocked an undo"
         );
+    }
+
+    #[test]
+    fn a_branch_never_reuses_a_name_the_trunk_already_gave_out() {
+        // Identity is a device and a sequence, which is collision-free across
+        // devices and was not across branches of one. A branch taken before the
+        // trunk's second edit re-allocated that edit's number, and merging back
+        // read as "already present" — the branch's work disappearing without a
+        // word, which is exactly what Master Prompt #24 forbids.
+        let mut trunk = OperationLog::new();
+        commit(&mut trunk, 1, place(1, 0));
+        commit(&mut trunk, 1, place(2, 48_000));
+
+        let mut branch = trunk.branch_at(1).expect("a valid position");
+        commit(&mut branch, 1, place(9, 200_000));
+
+        let branched = branch
+            .operations()
+            .last()
+            .map(|operation| operation.id)
+            .expect("the branch has an operation");
+        assert!(
+            !trunk.contains(branched),
+            "the branch reused {branched}, which the trunk had already given out"
+        );
+
+        let incoming: Vec<Operation> = branch
+            .operations()
+            .filter(|operation| !trunk.contains(operation.id))
+            .cloned()
+            .collect();
+        let report = trunk.merge(&incoming).expect("a mergeable branch");
+        assert_eq!(report.applied, 1, "the branch's work was not applied");
+        assert!(!report.needs_review());
+        assert!(trunk.state().placements.contains_key(&PlacementId::new(9)));
+    }
+
+    #[test]
+    fn two_different_edits_under_one_name_are_reported_rather_than_dropped() {
+        // The case the high-water mark cannot remove: two independent branches
+        // of one device. Treating it as "already present" discarded the
+        // incoming work silently. Reported, the person who made the edit is
+        // told it could not be applied under that name.
+        let mut log = OperationLog::new();
+        commit(&mut log, 1, place(1, 0));
+
+        let held = log
+            .operations()
+            .next()
+            .cloned()
+            .expect("the log has an operation");
+
+        // Same identity, different work — what a second branch would produce.
+        let impostor = Operation {
+            id: held.id,
+            context: held.context.clone(),
+            timestamp_micros: held.timestamp_micros,
+            payload: place(7, 96_000),
+        };
+
+        let report = log.merge(&[impostor]).expect("a merge");
+        assert_eq!(report.applied, 0);
+        assert_eq!(report.already_present, 0, "a collision read as a duplicate");
+        assert_eq!(report.conflicts.len(), 1);
+        assert_eq!(
+            report.conflicts.first().map(|conflict| conflict.kind),
+            Some(ConflictKind::SameNameDifferentWork)
+        );
+    }
+
+    #[test]
+    fn the_same_operation_delivered_twice_is_still_boring() {
+        // The other half: a network that retries must not turn a duplicate into
+        // a conflict, or every flaky connection would ask the user a question.
+        let mut log = OperationLog::new();
+        commit(&mut log, 1, place(1, 0));
+        let held: Vec<Operation> = log.operations().cloned().collect();
+
+        let report = log.merge(&held).expect("a merge");
+        assert_eq!(report.already_present, 1);
+        assert!(!report.needs_review());
     }
 }

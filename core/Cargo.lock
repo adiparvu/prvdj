@@ -236,6 +236,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-render"
+version = "0.1.0"
+dependencies = [
+ "prv-project",
+ "prv-rt",
+ "prv-time",
+ "prv-timeline",
+]
+
+[[package]]
 name = "prv-rt"
 version = "0.1.0"
 dependencies = [
