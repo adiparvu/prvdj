@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 21._
+_Last updated: Sprint 22._
 
 ## Sprint 0 — Foundation
 
@@ -246,6 +246,17 @@ _Last updated: Sprint 21._
 | A request about an empty set is refused | Completed | Verified | More useful than an empty answer, which reads as "nothing to say" |
 | Urgency, and its propagation | Completed | Verified | Anything a requested task needs is itself requested |
 | Live playback defers background work | Completed | Verified | Deferred, never dropped; the deferred set is closed under dependency |
+
+## Sprint 22 — Telemetry
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-telemetry` event vocabulary | Completed | Verified | Closed list, no payload; faults and usage are separable |
+| Nothing recorded without agreement | Completed | Verified | Not recorded-and-not-sent — no buffer exists for a mistake to release |
+| Counts, never a trace | Completed | Verified | Reordering the same events produces an identical record |
+| Withdrawal discards what was held | Completed | Verified | A cleared record is indistinguishable from one that never counted |
+| `prv-telemetry` diagnostics | Completed | Verified | A credential-bearing report is refused at every setting, checked first |
+| What the user is shown is what would be sent | Completed | Verified | One structure, rendered through the redaction module |
 
 ## Not started
 

@@ -19,6 +19,7 @@ members = [
     "prv-settings",
     "prv-plugin",
     "prv-ai",
+    "prv-telemetry",
 ]
 
 [workspace.package]

@@ -221,6 +221,12 @@ did not have would be worse than no row at all.
 | A step somebody is waiting for is never blocked by postponed work | MP#19 | `prv-ai::TaskPlan::schedule` | `nothing_a_requested_task_needs_is_ever_deferred` | **Verified** |
 | A request becomes exactly the work it needs | MP#19 | `prv-ai::plan_for` | `analysis_appears_only_when_something_is_unanalysed`, `a_composed_plan_always_schedules` | **Verified** |
 | Nothing to do is said, not simulated | MP#10, MP#13 | `prv-ai::plan_for` | `an_analysed_library_asked_to_analyse_itself_produces_nothing_to_do`, `a_request_about_a_set_that_is_empty_says_so` | **Verified** |
+| Nothing is recorded without agreement | MP#26 | `prv-telemetry::Counts::record` | `nothing_is_recorded_without_agreement`, `a_user_who_agreed_to_nothing_leaves_no_trace_anywhere` | **Verified** |
+| Telemetry is counts, never a behavioural trace | MP#26 | `prv-telemetry::Counts` | `what_is_kept_is_a_total_and_never_an_order`, `counting_is_bounded_by_the_number_of_kinds_not_by_use` | **Verified** |
+| Withdrawing an agreement discards what was held | MP#26, MP#9 | `prv-telemetry::Counts::apply` | `withdrawing_an_agreement_discards_what_was_already_held`, `a_cleared_record_is_indistinguishable_from_one_that_never_counted` | **Verified** |
+| Crash reporting and usage counting are separate agreements | MP#26 | `prv-telemetry::Counts::purpose_for` | `agreeing_to_crash_reports_is_not_agreeing_to_being_counted`, `every_event_belongs_to_exactly_one_agreement` | **Verified** |
+| A diagnostic carrying a credential is never sent | MP#26 | `prv-telemetry::Diagnostic::may_be_sent` | `a_report_containing_a_credential_never_goes_at_any_setting`, `a_secret_is_refused_before_anything_else_is_considered` | **Verified** |
+| What a user is shown is what would be sent | MP#26, MP#10 | `prv-telemetry::Counts::report` | `what_a_user_is_shown_is_what_would_be_sent`, `a_report_can_hold_nothing_a_person_could_be_recognised_by` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

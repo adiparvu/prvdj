@@ -243,6 +243,13 @@ name = "prv-settings"
 version = "0.1.0"
 
 [[package]]
+name = "prv-telemetry"
+version = "0.1.0"
+dependencies = [
+ "prv-security",
+]
+
+[[package]]
 name = "prv-time"
 version = "0.1.0"
 dependencies = [
