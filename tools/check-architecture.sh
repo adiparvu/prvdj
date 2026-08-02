@@ -59,11 +59,23 @@ fi
 # ADR-0002's guarantees rest on a small, reviewed set of wait-free structures.
 # Unsafe code spreading beyond `prv-rt` would make that set impossible to audit,
 # which is exactly the failure mode the confinement exists to prevent.
+#
+# Comments are stripped before matching. The rule is about code, and a scanner
+# that also matched prose would make documenting *why* a module avoids unsafe
+# code into a build failure — which would train authors to stop explaining it.
 # ---------------------------------------------------------------------------
-unsafe_hits="$(core_sources | grep -v '^core/prv-rt/' | xargs -r grep -l -E '\bunsafe\b' || true)"
+unsafe_hits=""
+while IFS= read -r source; do
+    case "$source" in
+        core/prv-rt/*) continue ;;
+    esac
+    if sed 's://.*::' "$source" | grep -q -E '\bunsafe\b'; then
+        unsafe_hits="${unsafe_hits}${source}\n"
+    fi
+done < <(core_sources)
 if [ -n "$unsafe_hits" ]; then
     fail "unsafe code is permitted only in prv-rt (ADR-0002); found in:"
-    printf '%s\n' "$unsafe_hits" >&2
+    printf '%b' "$unsafe_hits" >&2
 else
     pass "unsafe code confined to prv-rt"
 fi
@@ -179,6 +191,59 @@ if [ -n "$tainted" ]; then
     printf '%b' "$tainted" >&2
 else
     pass "no engine depends on entitlements"
+fi
+
+# ---------------------------------------------------------------------------
+# Rule 8 — no credential material in the repository.
+#
+# Master Prompt #26: never hardcode API keys, access tokens, private keys,
+# credentials or certificates. This is the rule most often kept by intention and
+# broken by accident — a key pasted into a test to get a build green on a Friday
+# outlives the Friday, and once it is in the history it is published whether or
+# not the commit that removed it looks tidy.
+#
+# The patterns below are deliberately specific. A scanner that cries wolf is a
+# scanner people learn to pass with `--no-verify`, and the useful property of
+# this one is that a failure means something.
+#
+# It scans what git tracks or has staged, which is what is about to be published.
+# A key in an untracked scratch file is the author's own business; a key that has
+# been staged is one command away from being permanent.
+# ---------------------------------------------------------------------------
+scannable() {
+    git ls-files -- \
+        ':!:tools/check-architecture.sh' \
+        ':!:*.lock' \
+        2>/dev/null || true
+}
+
+credential_patterns=(
+    # A private key of any kind, in its armoured form.
+    '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+    # A certificate committed alongside code.
+    '-----BEGIN CERTIFICATE-----'
+    # An assignment of a named credential to a long literal. The length floor
+    # keeps empty strings, placeholders and short identifiers out of it.
+    '(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password)[[:space:]]*[:=][[:space:]]*.[A-Za-z0-9/+_-]{16,}'
+    # Provider-shaped keys, which are recognisable on their own.
+    'AKIA[0-9A-Z]{16}'
+    'sk-[A-Za-z0-9]{32,}'
+    'ghp_[A-Za-z0-9]{36}'
+    'xox[baprs]-[A-Za-z0-9-]{10,}'
+)
+
+credential_hits=""
+for pattern in "${credential_patterns[@]}"; do
+    hits="$(scannable | xargs -r grep -l -E -- "$pattern" 2>/dev/null || true)"
+    if [ -n "$hits" ]; then
+        credential_hits="${credential_hits}${pattern}\n${hits}\n"
+    fi
+done
+if [ -n "$credential_hits" ]; then
+    fail "credential material must never be committed (Master Prompt #26); found:"
+    printf '%b' "$credential_hits" >&2
+else
+    pass "no credential material in the repository"
 fi
 
 printf '\n'

@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 16._
+_Last updated: Sprint 17._
 
 ## Sprint 0 — Foundation
 
@@ -192,6 +192,18 @@ _Last updated: Sprint 16._
 | Expiry is the free tier, not a locked door | Completed | Verified | Essential features survive; the user's own privacy choices survive with them |
 | Denials that explain | Completed | Verified | A tier denial names the tier; a user's own choice is not answered with a sales prompt |
 | Architecture rule 7 — no engine depends on entitlements | Completed | Verified | Enforced by `tools/check-architecture.sh`; the rule was tested against a deliberate violation |
+
+## Sprint 17 — Security policy
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-security` authorisation | Completed | Verified | One decision point; roles cumulative; six capabilities no manifest can ever hold |
+| `prv-security` consent | Completed | Verified | Nothing granted by default; training reachable from nothing else; every purpose withdrawable |
+| `prv-security` redaction | Completed | Verified | A log field for a secret takes no value, so a token cannot be put in a diagnostic |
+| `prv-security` secret handling | Completed | Verified | Redacted in every rendering; compared without an early return; zeroised on drop, best effort |
+| `prv-security` audit | Completed | Verified | Four closed vocabularies and no personal data; discards are counted, never silent |
+| Architecture rule 8 — no credential material committed | Completed | Verified | Scans tracked and staged files; exercised against a planted key |
+| Architecture rule 2 no longer matches prose | Completed | Verified | Comments stripped before matching; still fails on real unsafe code |
 
 ## Not started
 

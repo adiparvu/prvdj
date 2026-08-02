@@ -33,6 +33,7 @@ did not have would be worse than no row at all.
 | No hardcoded visual values | MP#16 | `design/tokens/` | `tokengen --check` gate | **Enforced** |
 | Dependencies point inward only | MP#4, MP#7 | crate graph | the core cannot name a UI framework — it does not exist in its language | **Enforced** |
 | No engine knows what tier it is running under | MP#4, MP#29 | `prv-entitlements` isolated | `tools/check-architecture.sh` rule 7, exercised against a deliberate violation | **Enforced** |
+| No credential material is ever committed | MP#26 | whole repository | `tools/check-architecture.sh` rule 8, exercised against a planted key | **Enforced** |
 
 ## Musical time and transport
 
@@ -178,6 +179,20 @@ did not have would be worse than no row at all.
 | A higher tier never grants less | MP#29 | `prv-entitlements::Licence::check` | `tiers_are_cumulative` | **Verified** |
 | A denial says what would grant the feature | MP#10, MP#29 | `prv-entitlements::Denial` | `a_denial_says_what_would_grant_the_feature` | **Verified** |
 | A privacy choice is not answered with a sales prompt | MP#26, MP#29 | `prv-entitlements::Denial::DisabledByUser` | `a_privacy_choice_is_not_answered_with_a_sales_prompt` | **Verified** |
+| Authorisation rules are centralised | MP#26 | `prv-security::authorise` | `roles_are_cumulative`, `a_viewer_can_look_and_do_nothing_else`, `the_owner_can_do_everything` | **Verified** |
+| Sandboxed code cannot widen its own authority | MP#23, MP#26, ADR-0005 | `prv-security::Capability::may_be_delegated_to_a_plugin` | `no_manifest_can_hold_authority_over_secrets_consent_or_licensing`, `a_manifest_from_outside_cannot_smuggle_forbidden_bits_in` | **Verified** |
+| Plugin permissions are revocable | MP#23, ADR-0005 | `prv-security::PermissionSet::revoke` | `revoking_a_permission_takes_effect`, `a_plugin_starts_with_nothing` | **Verified** |
+| A refusal explains, and never offers an impossible remedy | MP#10, MP#26 | `prv-security::Refusal` | `a_refusal_says_whether_asking_the_user_would_help` | **Verified** |
+| Nothing is consented to by default | MP#26 | `prv-security::Consents` | `nothing_is_agreed_to_by_default`, `withdrawing_everything_returns_to_the_starting_state` | **Verified** |
+| Projects are never used for training without explicit permission | MP#26 | `prv-security::Purpose::ModelTraining` | `training_on_a_users_work_is_reachable_from_nothing_else` | **Verified** |
+| The user is told where their work is processed | MP#26 | `prv-security::Purpose::location`, `sends_content` | `a_purpose_that_sends_the_users_own_material_says_so`, `the_indicator_reflects_only_what_actually_leaves` | **Verified** |
+| Every purpose is withdrawable | MP#26 | `prv-security::Consents::withdraw` | `every_purpose_can_be_withdrawn_and_withdrawal_is_immediate` | **Verified** |
+| No secret is ever transmitted in a log | MP#26 | `prv-security::Field::secret` | `a_record_renders_public_values_and_withholds_the_rest`, `a_diagnostic_about_a_credential_failure_carries_no_credential` | **Verified** |
+| A secret is redacted in every rendering, including derived ones | MP#26 | `prv-security::Secret` | `a_struct_that_derives_debug_and_contains_one_is_safe_to_print` | **Verified** |
+| No agreement can make a secret loggable | MP#26 | `prv-security::Sensitivity` | `no_agreement_can_put_a_secret_in_a_diagnostic` | **Verified** |
+| An audit trail records decisions, not people | MP#26 | `prv-security::audit::Entry` | `an_entry_cannot_be_rendered_into_anything_but_stable_keys`, `the_actor_is_the_kind_and_never_the_person` | **Verified** |
+| An audit log never forgets silently | MP#26, MP#9 | `prv-security::AuditLog::discarded` | `an_overflowing_log_says_how_many_it_dropped` | **Verified** |
+| Permission and agreement are separate checks | MP#26 | `prv-security` | `permission_and_agreement_are_two_different_questions` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

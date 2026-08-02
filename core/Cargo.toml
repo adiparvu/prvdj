@@ -15,6 +15,7 @@ members = [
     "prv-learning",
     "prv-export",
     "prv-entitlements",
+    "prv-security",
 ]
 
 [workspace.package]
