@@ -205,6 +205,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-plugin"
+version = "0.1.0"
+dependencies = [
+ "prv-security",
+]
+
+[[package]]
 name = "prv-project"
 version = "0.1.0"
 dependencies = [

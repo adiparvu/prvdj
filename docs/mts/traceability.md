@@ -199,6 +199,15 @@ did not have would be worse than no row at all.
 | A platform accommodation is never withdrawn by a preference | MP#8, MP#16 | `prv-settings::Accessibility` | `the_platform_can_turn_reduced_motion_on_and_the_application_cannot_turn_it_off`, `an_accommodation_survives_every_other_preference` | **Verified** |
 | Text scaling is limited by the platform, not by the layout | MP#8, MP#16 | `prv-settings::PlatformAccessibility` | `the_text_scale_limit_comes_from_the_platform_not_from_the_layout` | **Verified** |
 | An older build does not delete a newer build's preferences | MP#9, MP#24 | `prv-settings::Settings::keep_unknown` | `a_newer_builds_settings_survive_this_one`, `an_unkeepable_entry_is_reported_rather_than_dropped_quietly` | **Verified** |
+| A crashing plugin never stops playback | MP#23, ADR-0005 | `prv-plugin::LifecycleState::audio_behaviour` | `nothing_that_can_happen_to_a_plugin_stops_the_graph`, `a_crash_and_an_overrun_both_land_on_bypassed` | **Verified** |
+| A plugin that overruns repeatedly is bypassed | MP#23, ADR-0005 | `prv-plugin::Watchdog` | `three_in_a_row_is_the_plugin`, `a_plugin_that_never_has_three_in_a_row_is_still_caught`, `one_late_block_is_not_a_fault` | **Verified** |
+| A bypass does not move the music in time | MP#18, MP#23 | `prv-plugin::Registry::compensated_latency_frames` | `bypassing_a_plugin_does_not_move_the_music_in_time` | **Verified** |
+| A plugin is pre-instantiated before it is reachable | MP#18, ADR-0005 | `prv-plugin::LifecycleState::Loaded` | `a_plugin_cannot_reach_the_callback_without_being_approved_and_loaded`, `only_running_processes` | **Verified** |
+| Unsigned code is never loaded without explicit approval | MP#26, ADR-0005 | `prv-plugin::Manifest::may_load_without_asking` | `unsigned_code_is_never_loaded_without_asking` | **Verified** |
+| A plugin gets what the user approved, never what it asked for | MP#23, MP#26 | `prv-plugin::Registry::approve` | `a_plugin_gets_what_the_user_approved_and_never_more_than_it_asked_for`, `a_plugin_is_installed_holding_nothing` | **Verified** |
+| Plugin permissions are revocable and revocation is immediate | MP#23 | `prv-plugin::Registry::withdraw`, `lifecycle::advance` | `withdrawing_a_permission_takes_effect_on_the_next_question`, `revocation_applies_everywhere_and_is_final` | **Verified** |
+| Declared plugin latency is bounded and compensated | MP#18, MP#23 | `prv-plugin::Manifest::MAX_LATENCY_FRAMES` | `latency_beyond_what_the_graph_will_compensate_is_refused`, `a_plugin_off_the_audio_path_declares_no_latency_whatever_it_says` | **Verified** |
+| The certified tier is not self-assignable | MP#23, ADR-0005 | `prv-plugin::ManifestError::TierNotSelfAssignable` | `the_certified_tier_cannot_be_claimed_by_a_file` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

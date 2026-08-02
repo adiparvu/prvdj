@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 18._
+_Last updated: Sprint 19._
 
 ## Sprint 0 — Foundation
 
@@ -214,6 +214,17 @@ _Last updated: Sprint 18._
 | `prv-settings` document | Completed | Verified | Only choices are stored; a withdrawn choice returns to following the mode |
 | Unrecognised settings preserved | Completed | Verified | An older build no longer deletes a newer build's preferences on launch |
 | `prv-settings` accessibility | Completed | Verified | The platform can add an accommodation and nothing here can withdraw one |
+
+## Sprint 19 — Plugins
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-plugin` isolation tiers | Completed | Verified | A tier on the audio thread is either interruptible or certified; never neither |
+| `prv-plugin` manifest | Completed | Verified | A claim, not a fact; forbidden authority narrowed rather than refused |
+| `prv-plugin` lifecycle | Completed | Verified | Every state processes or passes through; there is no event whose outcome is silence |
+| `prv-plugin` watchdog | Completed | Verified | Two rules; allocation-free, total, safe to call from the callback |
+| `prv-plugin` registry | Completed | Verified | Granted is not requested; a bypass does not move the music in time |
+| Revocation | Completed | Verified | Applies from any state, is terminal, and takes effect on the next question |
 
 ## Not started
 

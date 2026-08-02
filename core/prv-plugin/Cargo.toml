@@ -1,0 +1,15 @@
+[package]
+name = "prv-plugin"
+description = "Plugin manifests, isolation tiers, lifecycle and the watchdog that keeps the music playing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-security = { path = "../prv-security" }
+
+[lints]
+workspace = true

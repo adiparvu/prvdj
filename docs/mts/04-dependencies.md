@@ -7,7 +7,10 @@ existential problem four years from now.
 
 ## Portable core
 
-**The core has no runtime dependencies.** Seventeen crates, zero.
+**The core has no third-party runtime dependencies.** Eighteen crates, zero.
+Two of them depend on another core crate — `prv-plugin` on `prv-security`, so that
+authorisation has one decision point rather than two — and nothing in the core
+depends on anything outside it.
 
 This is a deliberate position, not an accident of being early. Every crate on the
 realtime path is a crate whose allocation behaviour, panic behaviour and
