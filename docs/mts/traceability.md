@@ -168,6 +168,10 @@ did not have would be worse than no row at all.
 | A hand edit and a generated edit are the same object | MP#3B, ADR-0003 | `prv-timeline::Edit` | `an_edit_applied_to_the_log_rebuilds_the_same_timeline`, `a_split_records_both_halves` | **Verified** |
 | Deleting a clip does not silently lose its automation | MP#9 | `prv-timeline::Timeline::remove` | `removing_a_clip_records_its_automation_going_too` | **Verified** |
 | A trimmed clip does not slide on reload | MP#3C, MP#21 | `prv-project::OperationPayload::SetPlacementSource` | `a_source_offset_is_recorded_without_redefining_an_older_operation`, `an_edit_applied_to_the_log_rebuilds_the_same_timeline` | **Verified** |
+| An export comes with a report the user can act on | MP#3C | `prv-export::report` | `a_dynamic_mix_that_would_clip_is_a_different_verdict_from_one_that_needs_gain` | **Verified** |
+| Nothing is normalised silently | MP#3A | `prv-export::ExportReport::gain_db` | `silence_is_reported_rather_than_normalised`, `an_archive_is_never_gained_and_only_has_to_not_be_clipping` | **Verified** |
+| Inter-sample clipping is caught before delivery | MP#3A, MP#3C | `prv-export::DeliveryTarget::true_peak_ceiling_dbtp` | `every_target_that_normalises_has_a_ceiling_below_full_scale` | **Verified** |
+| A mix records what went into it | MP#3C, MP#29 | `prv-export::Manifest` | `a_missing_track_is_recorded_rather_than_omitted`, `reproducing_requires_the_analysis_versions_to_match_too` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

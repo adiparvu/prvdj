@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 14._
+_Last updated: Sprint 15._
 
 ## Sprint 0 — Foundation
 
@@ -173,6 +173,15 @@ _Last updated: Sprint 14._
 | Confidence gating | Completed | Verified | Influence arrives gradually; no observation changes the system's character |
 | Bounds that learning cannot cross | Completed | Verified | No profile can switch a component off or reach a hard constraint |
 | Explain, correct and delete | Completed | Verified | The user owns it; a cleared profile is indistinguishable from a new one |
+
+## Sprint 15 — Delivery
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-export` delivery targets | Completed | Verified | Published figures in one place, each with the reason it is what it is |
+| `prv-export` compliance report | Completed | Verified | Computed before the render; "needs gain" and "would clip" are different verdicts |
+| Dither derived rather than configured | Completed | Verified | Right in all four combinations of depth and format |
+| `prv-export` provenance manifest | Completed | Verified | Licensing, reproducibility and integrity from one structure |
 
 ## Not started
 

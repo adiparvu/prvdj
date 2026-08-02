@@ -1,0 +1,17 @@
+[package]
+name = "prv-export"
+description = "Delivery: formats, loudness compliance, dither and the provenance manifest."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+prv-analysis = { path = "../prv-analysis" }
+prv-project = { path = "../prv-project" }
+prv-time = { path = "../prv-time" }
+
+[lints]
+workspace = true

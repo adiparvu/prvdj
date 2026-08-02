@@ -7,7 +7,7 @@ existential problem four years from now.
 
 ## Portable core
 
-**The core has no runtime dependencies.** Thirteen crates, zero.
+**The core has no runtime dependencies.** Fourteen crates, zero.
 
 This is a deliberate position, not an accident of being early. Every crate on the
 realtime path is a crate whose allocation behaviour, panic behaviour and
