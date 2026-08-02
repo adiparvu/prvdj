@@ -16,6 +16,7 @@
 //! story gets.
 
 use crate::abi;
+use crate::analysis::Analysis;
 use crate::engine::{Engine, ReadAudio};
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
@@ -678,6 +679,258 @@ pub unsafe extern "C" fn prv_planner_apply(
         // SAFETY: as above.
         let engine = unsafe { as_mut(engine) }?;
         engine.apply_plan(planner, timestamp_micros)
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Analysis
+//
+// Not the audio thread. These allocate and take seconds on a long track; they
+// belong to the background domain. A host that called one from a render
+// callback would drop out.
+// ---------------------------------------------------------------------------
+
+/// Analyses a track and returns a handle to what was found.
+///
+/// `samples` is mono, `frames` long. The audio is borrowed for the duration of
+/// this call and never retained.
+///
+/// # Safety
+///
+/// `samples` must be readable for `frames` floats, and `out_analysis` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_run(
+    samples: *const f32,
+    frames: u64,
+    sample_rate: u32,
+    out_analysis: *mut *mut Analysis,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_analysis) }?;
+        *slot = core::ptr::null_mut();
+        if samples.is_null() {
+            return Err(Status::NullPointer);
+        }
+        let count = usize::try_from(frames).map_err(|_| Status::InvalidArgument)?;
+        if count == 0 || count > crate::analysis::MAX_FRAMES {
+            return Err(Status::InvalidArgument);
+        }
+
+        // SAFETY: the caller promises `samples` is readable for `frames` floats.
+        // The slice is used only within this call and never escapes it.
+        let audio = unsafe { core::slice::from_raw_parts(samples, count) };
+        let analysis = Analysis::run(audio, sample_rate)?;
+        *slot = Box::into_raw(Box::new(analysis));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys an analysis. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `analysis` must come from [`prv_analysis_run`] and not yet be destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_destroy(analysis: *mut Analysis) {
+    if analysis.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(analysis) });
+        Status::Ok
+    });
+}
+
+/// Reads the tempo, in beats per minute, and how sure the estimate is.
+///
+/// Returns `PRV_REFUSED` when no pulse was found. That is the answer, not a
+/// failure: a track with no discernible tempo has none, and a guessed 120 would
+/// reach the planner and a whole set would be built on it.
+///
+/// # Safety
+///
+/// `analysis` must be live and both out-parameters writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_tempo(
+    analysis: *const Analysis,
+    out_bpm: *mut f64,
+    out_confidence: *mut f32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        let (bpm, confidence) = analysis.tempo()?;
+        // SAFETY: as above.
+        unsafe {
+            *as_mut(out_bpm)? = bpm;
+            *as_mut(out_confidence)? = confidence;
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the key: semitones above C, whether it is minor, and the confidence.
+///
+/// # Safety
+///
+/// `analysis` must be live and every out-parameter writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_key(
+    analysis: *const Analysis,
+    out_semitones: *mut i32,
+    out_is_minor: *mut i32,
+    out_confidence: *mut f32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        let (semitones, is_minor, confidence) = analysis.key()?;
+        // SAFETY: as above.
+        unsafe {
+            *as_mut(out_semitones)? = semitones;
+            *as_mut(out_is_minor)? = i32::from(is_minor);
+            *as_mut(out_confidence)? = confidence;
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the integrated loudness in LUFS and the loudness range.
+///
+/// # Safety
+///
+/// `analysis` must be live and both out-parameters writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_loudness(
+    analysis: *const Analysis,
+    out_integrated: *mut f64,
+    out_range: *mut f64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        let (integrated, range) = analysis.loudness()?;
+        // SAFETY: as above.
+        unsafe {
+            *as_mut(out_integrated)? = integrated;
+            *as_mut(out_range)? = range;
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the true peak, in decibels relative to full scale.
+///
+/// # Safety
+///
+/// `analysis` must be live and `out_true_peak` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_true_peak(
+    analysis: *const Analysis,
+    out_true_peak: *mut f64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_true_peak) }? = analysis.true_peak()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads the track's overall energy, from zero to one.
+///
+/// # Safety
+///
+/// `analysis` must be live and `out_energy` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_energy(
+    analysis: *const Analysis,
+    out_energy: *mut f32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_energy) }? = analysis.energy()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads how long the analysed audio was, in frames.
+///
+/// # Safety
+///
+/// `analysis` must be live and `out_frames` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_duration(
+    analysis: *const Analysis,
+    out_frames: *mut i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_frames) }? = analysis.duration();
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads how many places a transition could happen.
+///
+/// # Safety
+///
+/// `analysis` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_transition_point_count(
+    analysis: *const Analysis,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = analysis.transition_point_count()?;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads one place a transition could happen: where it starts, and how quiet.
+///
+/// Quieter is better to mix on, which is why the energy comes back with the
+/// position rather than needing a second call.
+///
+/// # Safety
+///
+/// `analysis` must be live and both out-parameters writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_analysis_transition_point(
+    analysis: *const Analysis,
+    index: u64,
+    out_position: *mut i64,
+    out_energy: *mut f32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let analysis = unsafe { as_ref(analysis) }?;
+        let (position, energy) = analysis.transition_point(index)?;
+        // SAFETY: as above.
+        unsafe {
+            *as_mut(out_position)? = position;
+            *as_mut(out_energy)? = energy;
+        }
+        Ok(())
     })
     .code()
 }

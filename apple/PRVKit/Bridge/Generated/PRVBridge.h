@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 1
+#define PRV_ABI_MINOR 2
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -116,6 +116,9 @@ typedef struct PrvEngine PrvEngine;
 
 /* A planner: a library of candidates, and the sets planned from it. */
 typedef struct PrvPlanner PrvPlanner;
+
+/* What the analysis found out about one track. */
+typedef struct PrvAnalysis PrvAnalysis;
 
 /*
  * Reads audio for one track.
@@ -357,6 +360,78 @@ int32_t prv_planner_track(const PrvPlanner *planner, uint64_t index, uint64_t *o
  */
 int32_t prv_planner_apply(const PrvPlanner *planner, PrvEngine *engine,
                           int64_t timestamp_micros);
+
+/*
+ * Analyses a track. `samples` is mono, `frames` long.
+ *
+ * The audio is borrowed for the duration of this call and never retained.
+ *
+ * NOT THE AUDIO THREAD. This allocates and takes seconds on a long track.
+ * It belongs to the background domain; calling it from a render callback
+ * would drop out.
+ */
+int32_t prv_analysis_run(const float *samples, uint64_t frames, uint32_t sample_rate,
+                         PrvAnalysis **out_analysis);
+
+/*
+ * Destroys an analysis. NULL is accepted and does nothing.
+ */
+void prv_analysis_destroy(PrvAnalysis *analysis);
+
+/*
+ * Reads the tempo in beats per minute, and how sure the estimate is.
+ *
+ * Returns PRV_REFUSED when no pulse was found. That is the answer, not a
+ * failure: a track with no discernible tempo has none, and a guessed 120
+ * would reach the planner and a whole set would be built on it.
+ */
+int32_t prv_analysis_tempo(const PrvAnalysis *analysis, double *out_bpm,
+                           float *out_confidence);
+
+/*
+ * Reads the key: semitones above C, whether it is minor, and confidence.
+ */
+int32_t prv_analysis_key(const PrvAnalysis *analysis, int32_t *out_semitones,
+                         int32_t *out_is_minor, float *out_confidence);
+
+/*
+ * Reads the integrated loudness in LUFS and the loudness range.
+ */
+int32_t prv_analysis_loudness(const PrvAnalysis *analysis, double *out_integrated,
+                              double *out_range);
+
+/*
+ * Reads the true peak, in decibels relative to full scale.
+ */
+int32_t prv_analysis_true_peak(const PrvAnalysis *analysis, double *out_true_peak);
+
+/*
+ * Reads the track's overall energy, from zero to one.
+ *
+ * Absent rather than defaulted when no structure was found, for the same
+ * reason the tempo is: the planner shapes a whole set around this number.
+ */
+int32_t prv_analysis_energy(const PrvAnalysis *analysis, float *out_energy);
+
+/*
+ * Reads how long the analysed audio was, in frames.
+ */
+int32_t prv_analysis_duration(const PrvAnalysis *analysis, int64_t *out_frames);
+
+/*
+ * Reads how many places the analysis found a transition could happen.
+ */
+int32_t prv_analysis_transition_point_count(const PrvAnalysis *analysis,
+                                            uint64_t *out_count);
+
+/*
+ * Reads one place a transition could happen: where, and how quiet.
+ *
+ * Quieter is better to mix on, which is why the energy comes back with the
+ * position rather than needing a second call.
+ */
+int32_t prv_analysis_transition_point(const PrvAnalysis *analysis, uint64_t index,
+                                      int64_t *out_position, float *out_energy);
 
 #ifdef __cplusplus
 }

@@ -414,6 +414,40 @@ made by hand.
 The boundary now carries the product's actual promise: *"a two-hour set that
 builds"* goes in, a tracklist comes out, and the audio plays.
 
+## Sprint 32 — Analysis reaches the host, and the application closes
+
+The last thing that was reachable in Rust only. Before this a host had to tell
+the planner a track's tempo, key, energy and loudness — facts the core computes
+and the host has no way to work out. The application would have had to ask a user
+to type in a BPM, which is not a product.
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::analysis` | Completed | Verified | Tempo, key, loudness, true peak, energy, transition points |
+| Absent is not zero | Completed | Verified | A track with no pulse has no tempo — not a tempo of zero, and not a guess |
+| `PRVCore.Analysis` | Completed | **Verified on Linux** | Optionals all the way out, so "we could not tell" survives to the interface |
+| Analyse → plan → place → play | Completed | **Verified on Linux** | Nothing typed in by hand |
+| ABI minor version 1.2 | Completed | Verified | Calls added, nothing existing moved |
+
+### What building the end-to-end test found
+
+The stages have different appetites, and nothing had said so. Tempo comes from a
+novelty curve and is available after a few seconds. **Structure needs roughly
+thirty seconds** before it finds sections, and without sections there is no
+energy figure — so a twelve-second loop analyses successfully, reports a tempo,
+and still cannot be planned with.
+
+That is the correct behaviour and a confusing one. It is now written down in
+`prv-ffi::analysis`, and the test that found it says why its fixture is the
+length it is.
+
+### The application, stated plainly
+
+There is now one test, in Swift, that does what the product does: decode audio,
+analyse it, hand the findings to the planner, ask for a set, apply the set to the
+project, press play, and hear it. Everything in that sentence is verified on
+every commit.
+
 ### The limitation that shrank
 
 R-01 used to read "no Apple code has been compiled". It now reads "no

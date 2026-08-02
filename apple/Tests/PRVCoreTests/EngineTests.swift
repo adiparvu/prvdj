@@ -455,3 +455,140 @@ struct PlannerTests {
         #expect(try planner.candidateCount() == 0, "a refused candidate was kept")
     }
 }
+
+@Suite("Analysing a track")
+struct AnalysisTests {
+
+    private static let rate: UInt32 = 44_100
+
+    /// A signal with a real pulse: a click every period, with a decaying tail so
+    /// the novelty curve has something to find.
+    private func pulsed(bpm: Double, seconds: Int) -> [Float] {
+        let period = Int(60.0 / bpm * Double(Self.rate))
+        let length = seconds * Int(Self.rate)
+        var samples = [Float](repeating: 0, count: length)
+        var index = 0
+        while index < length {
+            for offset in 0..<min(1_000, length - index) {
+                let decay = 1 - Float(offset) / 1_000
+                samples[index + offset] += 0.8 * decay * sin(Float(offset) * 0.05)
+            }
+            index += max(period, 1)
+        }
+        return samples
+    }
+
+    @Test("a track with a pulse yields a tempo and a loudness")
+    func analysesPulsedAudio() throws {
+        let analysis = try Analysis(samples: pulsed(bpm: 120, seconds: 20), sampleRate: Self.rate)
+
+        let tempo = try #require(analysis.tempo)
+        #expect(tempo.bpm > 0)
+        #expect((0...1).contains(tempo.confidence))
+
+        let loudness = try #require(analysis.loudness)
+        #expect(loudness.integrated.isFinite)
+        #expect(loudness.range >= 0)
+
+        #expect(analysis.duration == Int64(20 * Int(Self.rate)))
+    }
+
+    @Test("audio too short to analyse is refused rather than guessed at")
+    func refusesAudioTooShort() {
+        // Returning a default tempo would put a number the planner trusts into
+        // a set built on nothing.
+        #expect(throws: EngineError.refused) {
+            _ = try Analysis(samples: [Float](repeating: 0.1, count: 10), sampleRate: Self.rate)
+        }
+    }
+
+    @Test("a rate the analysis cannot use is refused")
+    func refusesImpossibleRate() {
+        #expect(throws: EngineError.invalidArgument) {
+            _ = try Analysis(samples: [Float](repeating: 0.1, count: 1_000), sampleRate: 0)
+        }
+    }
+
+    @Test("a reading that could not be made is absent rather than zero")
+    func absentIsNotZero() throws {
+        // The distinction the whole type is arranged around. Every optional here
+        // is `nil` when the analysis could not tell, and a caller that wants a
+        // number has to decide what to do about it.
+        let analysis = try Analysis(samples: pulsed(bpm: 128, seconds: 20), sampleRate: Self.rate)
+        if let tempo = analysis.tempo {
+            #expect(tempo.bpm > 0, "a tempo of zero was reported as a tempo")
+        }
+        if let energy = analysis.energy {
+            #expect((0...1).contains(energy))
+        }
+        for point in analysis.transitionPoints {
+            #expect(point.position >= 0)
+            #expect((0...1).contains(point.energy))
+        }
+    }
+
+    @Test("the whole application: analyse, plan, place, play")
+    func importToAudio() throws {
+        // Everything the product does, end to end, with nothing typed in by
+        // hand. This is the test that says the application exists.
+        let engine = try Engine(sampleRate: 44_100, channels: 2, maxBlockFrames: 512)
+        try engine.setSource(ConstantSource(value: 0.3, available: 1 << 20))
+        let planner = try Planner()
+
+        // Import: analyse each track and hand what was found to the planner.
+        //
+        // Thirty-two seconds each, and that is not arbitrary: the structure
+        // stage needs roughly thirty seconds of audio before it can find
+        // sections, and without sections there is no energy figure and so no
+        // candidate. A twelve-second fixture yields a tempo and nothing else.
+        var analysed = 0
+        for index in 0..<UInt64(3) {
+            let audio = pulsed(bpm: 126 + Double(index % 3), seconds: 32)
+            let analysis = try Analysis(samples: audio, sampleRate: Self.rate)
+            guard var candidate = analysis.candidate(track: index) else { continue }
+            // The fixture is a click track, so give every record the same key —
+            // what is under test is the path, not the key detector.
+            candidate.key = Candidate.Key(semitones: 9, isMinor: true)
+            try planner.add(candidate)
+            for point in analysis.mixPoints(track: index) {
+                try planner.add(point)
+            }
+            analysed += 1
+        }
+
+        try #require(analysed >= 2, "the analysis produced too few usable candidates")
+
+        // Plan, apply, play.
+        let target = Int64(analysed) * 32 * Int64(Self.rate) / 2
+        try planner.plan(targetFrames: target, sampleRate: 44_100, shape: .rising)
+        let planned = try planner.trackCount()
+        #expect(planned >= 2)
+
+        try planner.apply(to: engine)
+        #expect(try engine.placementCount() == planned)
+
+        try engine.apply(.load)
+        try engine.apply(.loadSucceeded)
+        try engine.apply(.play)
+
+        var block = [Float](repeating: 0, count: 2 * 256)
+        try block.withUnsafeMutableBufferPointer { buffer in
+            try engine.render(into: buffer, channels: 2, frames: 256)
+        }
+        #expect(block.contains { $0 != 0 }, "the set rendered silence")
+    }
+
+    @Test("a track the analysis could not read is not planned with defaults")
+    func unanalysableTrackIsNotFakedUp() throws {
+        // Substituting 120 BPM and 0.5 energy would produce a set that looks
+        // planned and was not, which is worse than telling the user the track
+        // could not be read.
+        let silence = [Float](repeating: 0, count: Int(Self.rate) * 5)
+        guard let analysis = try? Analysis(samples: silence, sampleRate: Self.rate) else {
+            return  // Refusing outright is an equally honest answer.
+        }
+        if analysis.tempo == nil || analysis.energy == nil {
+            #expect(analysis.candidate(track: 1) == nil)
+        }
+    }
+}

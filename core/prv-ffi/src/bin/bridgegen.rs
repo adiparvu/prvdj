@@ -154,6 +154,25 @@ fn declarations() -> Vec<Declaration> {
     ) -> i32 = prv_ffi::exports::prv_planner_track;
     let _: unsafe extern "C" fn(*const prv_ffi::Planner, *mut prv_ffi::Engine, i64) -> i32 =
         prv_ffi::exports::prv_planner_apply;
+    let _: unsafe extern "C" fn(*const f32, u64, u32, *mut *mut prv_ffi::Analysis) -> i32 =
+        prv_ffi::exports::prv_analysis_run;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Analysis) = prv_ffi::exports::prv_analysis_destroy;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut f64, *mut f32) -> i32 =
+        prv_ffi::exports::prv_analysis_tempo;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut i32, *mut i32, *mut f32) -> i32 =
+        prv_ffi::exports::prv_analysis_key;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut f64, *mut f64) -> i32 =
+        prv_ffi::exports::prv_analysis_loudness;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut f64) -> i32 =
+        prv_ffi::exports::prv_analysis_true_peak;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut f32) -> i32 =
+        prv_ffi::exports::prv_analysis_energy;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut i64) -> i32 =
+        prv_ffi::exports::prv_analysis_duration;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, *mut u64) -> i32 =
+        prv_ffi::exports::prv_analysis_transition_point_count;
+    let _: unsafe extern "C" fn(*const prv_ffi::Analysis, u64, *mut i64, *mut f32) -> i32 =
+        prv_ffi::exports::prv_analysis_transition_point;
 
     vec![
         Declaration {
@@ -388,6 +407,79 @@ fn declarations() -> Vec<Declaration> {
                 "promised to be.",
             ],
         },
+        Declaration {
+            signature: "int32_t prv_analysis_run(const float *samples, uint64_t frames, \
+                        uint32_t sample_rate, PrvAnalysis **out_analysis)",
+            doc: &[
+                "Analyses a track. `samples` is mono, `frames` long.",
+                "",
+                "The audio is borrowed for the duration of this call and never retained.",
+                "",
+                "NOT THE AUDIO THREAD. This allocates and takes seconds on a long track.",
+                "It belongs to the background domain; calling it from a render callback",
+                "would drop out.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_analysis_destroy(PrvAnalysis *analysis)",
+            doc: &["Destroys an analysis. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_tempo(const PrvAnalysis *analysis, double *out_bpm, \
+                        float *out_confidence)",
+            doc: &[
+                "Reads the tempo in beats per minute, and how sure the estimate is.",
+                "",
+                "Returns PRV_REFUSED when no pulse was found. That is the answer, not a",
+                "failure: a track with no discernible tempo has none, and a guessed 120",
+                "would reach the planner and a whole set would be built on it.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_key(const PrvAnalysis *analysis, \
+                        int32_t *out_semitones, int32_t *out_is_minor, float *out_confidence)",
+            doc: &["Reads the key: semitones above C, whether it is minor, and confidence."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_loudness(const PrvAnalysis *analysis, \
+                        double *out_integrated, double *out_range)",
+            doc: &["Reads the integrated loudness in LUFS and the loudness range."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_true_peak(const PrvAnalysis *analysis, \
+                        double *out_true_peak)",
+            doc: &["Reads the true peak, in decibels relative to full scale."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_energy(const PrvAnalysis *analysis, \
+                        float *out_energy)",
+            doc: &[
+                "Reads the track's overall energy, from zero to one.",
+                "",
+                "Absent rather than defaulted when no structure was found, for the same",
+                "reason the tempo is: the planner shapes a whole set around this number.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_duration(const PrvAnalysis *analysis, \
+                        int64_t *out_frames)",
+            doc: &["Reads how long the analysed audio was, in frames."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_transition_point_count(const PrvAnalysis *analysis, \
+                        uint64_t *out_count)",
+            doc: &["Reads how many places the analysis found a transition could happen."],
+        },
+        Declaration {
+            signature: "int32_t prv_analysis_transition_point(const PrvAnalysis *analysis, \
+                        uint64_t index, int64_t *out_position, float *out_energy)",
+            doc: &[
+                "Reads one place a transition could happen: where, and how quiet.",
+                "",
+                "Quieter is better to mix on, which is why the energy comes back with the",
+                "position rather than needing a second call.",
+            ],
+        },
     ]
 }
 
@@ -556,6 +648,9 @@ typedef struct PrvEngine PrvEngine;
 
 /* A planner: a library of candidates, and the sets planned from it. */
 typedef struct PrvPlanner PrvPlanner;
+
+/* What the analysis found out about one track. */
+typedef struct PrvAnalysis PrvAnalysis;
 
 ",
     );

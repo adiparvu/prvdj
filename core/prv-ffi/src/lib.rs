@@ -63,6 +63,7 @@
 //! | [`mapping`] | What integer does the core's enum have across C? |
 //! | [`engine`] | What does a host hold, and what can it ask? |
 //! | [`planning`] | How does a host get a set planned? |
+//! | [`analysis`] | What is this track: tempo, key, loudness, shape? |
 //! | [`exports`] | The functions themselves. |
 //!
 //! # The header is generated
@@ -82,6 +83,7 @@
 )]
 
 pub mod abi;
+pub mod analysis;
 pub mod engine;
 pub mod exports;
 mod guard;
@@ -89,6 +91,7 @@ pub mod mapping;
 pub mod planning;
 pub mod status;
 
+pub use analysis::Analysis;
 pub use engine::{Engine, ReadAudio, MAX_BLOCK_FRAMES, MAX_CHANNELS};
 pub use planning::Planner;
 pub use status::Status;

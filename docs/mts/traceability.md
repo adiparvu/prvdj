@@ -160,6 +160,10 @@ did not have would be worse than no row at all.
 | A host can plan a set | MP#3B, MP#19 | `prv-ffi::planning` | `a_host_can_build_a_library_plan_a_set_and_read_it_back`, `the_whole_product_in_one_test_library_to_plan_to_timeline_to_audio` | **Verified** |
 | A generated mix is an ordinary edit | MP#3B, MP#9, ADR-0003 | `prv_planner_apply` | `a_plan_becomes_ordinary_operations_on_the_log`, `applying_a_plan_twice_does_not_reuse_a_placement_identity` | **Verified** |
 | An unplannable library is told, not shown an empty list | MP#3B, MP#12 | `prv-ffi::Planner::plan` | `planning_with_an_empty_library_is_refused_rather_than_returning_nothing` | **Verified** |
+| A host can analyse a track | MP#20, MP#3A | `prv-ffi::analysis` | `a_track_with_a_pulse_gets_a_tempo_and_a_loudness`, `analysesPulsedAudio` | **Verified** |
+| A reading that could not be made is absent, not zero | MP#13, MP#20 | `prv-ffi::Analysis` | `silence_has_no_tempo_and_says_so`, `a_reading_that_could_not_be_made_is_absent_rather_than_zero` | **Verified** |
+| A track that cannot be analysed is not planned with defaults | MP#3B, MP#13 | `PRVCore.Analysis.candidate(track:)` | `a_track_the_analysis_could_not_read_is_not_faked_up` | **Verified** |
+| The whole product path | MP#3B, MP#19, MP#20 | boundary + `PRVCore` | `the_whole_application_analyse_plan_place_play` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |
