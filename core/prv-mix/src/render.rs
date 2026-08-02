@@ -870,7 +870,7 @@ mod tests {
         let mut state = ProjectState::default();
         let mut inverses = Vec::new();
         for operation in mix.operations() {
-            if let Some(inverse) = state.inverse_of(operation) {
+            if let Some(inverse) = state.inverses_of(operation).into_iter().next() {
                 inverses.push(inverse);
             }
             state.apply(operation);
@@ -1282,7 +1282,7 @@ mod tests {
         let mut state = ProjectState::default();
         let mut inverses = Vec::new();
         for operation in mix.operations() {
-            if let Some(inverse) = state.inverse_of(operation) {
+            if let Some(inverse) = state.inverses_of(operation).into_iter().next() {
                 inverses.push(inverse);
             }
             state.apply(operation);

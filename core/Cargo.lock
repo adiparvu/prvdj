@@ -157,6 +157,7 @@ dependencies = [
 name = "prv-analysis"
 version = "0.1.0"
 dependencies = [
+ "prv-dsp",
  "prv-harmony",
  "prv-time",
 ]

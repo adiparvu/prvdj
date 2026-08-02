@@ -34,8 +34,8 @@ use prv_time::{SampleRate, Tempo, TimeSignature};
 use prv_transport::{Transport, TransportEvent};
 
 use prv_dsp::{
-    Chain, DjFilter, Gain, Limiter, PitchShift, PrepareConfig, ProcessContext, Processor,
-    Resampler, ThreeBandEq, TimeStretch,
+    Chain, DjFilter, Gain, Limiter, LoudnessMeter, PitchShift, PrepareConfig, ProcessContext,
+    Processor, Resampler, ThreeBandEq, TimeStretch,
 };
 
 #[global_allocator]
@@ -152,6 +152,11 @@ fn dispatching_through_a_chain_adds_no_allocation() {
     // anything in this crate were going to allocate mid-render, it would.
     chain
         .push(Box::new(Limiter::new()))
+        .expect("chain has room");
+    // The meter after the limiter, where a master meter belongs: what it shows
+    // is what leaves. It changes nothing and is bound by the same contract.
+    chain
+        .push(Box::new(LoudnessMeter::new()))
         .expect("chain has room");
     chain.prepare(&config);
 

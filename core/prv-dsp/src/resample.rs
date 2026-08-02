@@ -246,7 +246,7 @@ impl Resampler {
             let offset = count_to_f64(phase) / count_to_f64(PHASES);
             for (tap, coefficient) in taps.iter_mut().enumerate() {
                 let distance = count_to_f64(tap) - count_to_f64(HALF) - offset;
-                let value = cutoff * sinc(cutoff * distance) * blackman(tap);
+                let value = cutoff * sinc(cutoff * distance) * blackman_at(distance);
                 *coefficient = narrow(value);
             }
         }
@@ -367,8 +367,11 @@ fn sinc(distance: f64) -> f64 {
     clippy::cast_precision_loss,
     reason = "the tap index is a single-digit count"
 )]
-fn blackman(tap: usize) -> f64 {
-    let position = count_to_f64(tap) / (count_to_f64(TAPS) - 1.0);
+fn blackman_at(distance: f64) -> f64 {
+    let position = (distance + count_to_f64(HALF)) / (count_to_f64(TAPS) - 1.0);
+    if !(0.0..=1.0).contains(&position) {
+        return 0.0;
+    }
     let angle = core::f64::consts::TAU * position;
     0.42 - 0.5 * angle.cos() + 0.08 * (2.0 * angle).cos()
 }

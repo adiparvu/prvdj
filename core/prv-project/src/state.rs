@@ -309,8 +309,51 @@ impl ProjectState {
     ///
     /// Returns `None` when there is nothing to undo — undoing the removal of
     /// something that was never there, for instance.
+    /// Every operation that would undo one.
+    ///
+    /// # Why a list rather than one operation
+    ///
+    /// A removal is the gesture that forced this. Restoring a placement takes a
+    /// `PlaceTrack`, and `PlaceTrack` cannot carry a source offset — ADR-0003
+    /// forbids redefining a variant, so the offset arrived as its own operation
+    /// in Sprint 13. An inverse that returned one payload therefore restored a
+    /// trimmed clip at offset zero: the audio under it slid back to the start of
+    /// the file, silently, on undo.
+    ///
+    /// `prv-timeline::Edit` reached the same answer for the same reason a sprint
+    /// earlier, and this is that lesson applied to the other side. Returning a
+    /// list makes "this gesture needs two operations" expressible instead of
+    /// making it a defect.
+    ///
+    /// Empty when there is nothing to undo — undoing the removal of something
+    /// that was never there, for instance.
     #[must_use]
-    pub fn inverse_of(&self, payload: &OperationPayload) -> Option<OperationPayload> {
+    pub fn inverses_of(&self, payload: &OperationPayload) -> Vec<OperationPayload> {
+        // The one case that does not fit in a single operation.
+        if let OperationPayload::RemovePlacement { placement } = payload {
+            let Some(existing) = self.placements.get(placement) else {
+                return Vec::new();
+            };
+            let mut inverses = vec![OperationPayload::PlaceTrack {
+                placement: *placement,
+                track: existing.track,
+                position: existing.position,
+                length: existing.length,
+                lane: existing.lane,
+            }];
+            if existing.source_offset.get() != 0 {
+                inverses.push(OperationPayload::SetPlacementSource {
+                    placement: *placement,
+                    source_offset: existing.source_offset,
+                });
+            }
+            return inverses;
+        }
+        self.single_inverse_of(payload).into_iter().collect()
+    }
+
+    /// The inverse of an operation that needs only one.
+    fn single_inverse_of(&self, payload: &OperationPayload) -> Option<OperationPayload> {
         match payload {
             OperationPayload::SetProjectName { .. } => Some(OperationPayload::SetProjectName {
                 name: self.name.clone(),
@@ -585,7 +628,7 @@ mod tests {
     fn undoing_a_placement_removes_it() {
         let state = ProjectState::new();
         let payload = place(1, 0, 48_000, 0);
-        let inverse = state.inverse_of(&payload);
+        let inverse = state.inverses_of(&payload).into_iter().next();
         assert_eq!(
             inverse,
             Some(OperationPayload::RemovePlacement {
@@ -604,7 +647,7 @@ mod tests {
             position: Frames::new(96_000),
             lane: 0,
         };
-        let inverse = state.inverse_of(&payload);
+        let inverse = state.inverses_of(&payload).into_iter().next();
         assert_eq!(
             inverse,
             Some(OperationPayload::MovePlacement {
@@ -624,7 +667,7 @@ mod tests {
         let payload = OperationPayload::RemovePlacement {
             placement: PlacementId::new(1),
         };
-        let inverse = state.inverse_of(&payload);
+        let inverse = state.inverses_of(&payload).into_iter().next();
         assert_eq!(
             inverse,
             Some(OperationPayload::PlaceTrack {
@@ -658,7 +701,11 @@ mod tests {
             placement: PlacementId::new(1),
             source_offset: Frames::new(400),
         };
-        let undo = state.inverse_of(&set).expect("there is an inverse");
+        let undo = state
+            .inverses_of(&set)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&set);
         assert_eq!(
             state
@@ -681,11 +728,11 @@ mod tests {
         // Setting the source of something that is not there is not undoable,
         // and says so rather than inventing an operation.
         assert!(state
-            .inverse_of(&OperationPayload::SetPlacementSource {
+            .inverses_of(&OperationPayload::SetPlacementSource {
                 placement: PlacementId::new(99),
                 source_offset: Frames::new(5),
             })
-            .is_none());
+            .is_empty());
     }
 
     #[test]
@@ -704,7 +751,11 @@ mod tests {
             position: Frames::ZERO,
             tempo: opening,
         };
-        let undo_opening = state.inverse_of(&set_opening).expect("there is an inverse");
+        let undo_opening = state
+            .inverses_of(&set_opening)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&set_opening);
         assert_eq!(state.tempo_changes.get(&0), Some(&opening));
 
@@ -713,7 +764,11 @@ mod tests {
             position: Frames::ZERO,
             tempo: later,
         };
-        let undo_change = state.inverse_of(&change).expect("there is an inverse");
+        let undo_change = state
+            .inverses_of(&change)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&change);
         assert_eq!(state.tempo_changes.get(&0), Some(&later));
         state.apply(&undo_change);
@@ -732,10 +787,10 @@ mod tests {
         // Removing something that was never there is not undoable, and says so
         // rather than inventing an operation.
         assert!(state
-            .inverse_of(&OperationPayload::RemoveTempo {
+            .inverses_of(&OperationPayload::RemoveTempo {
                 position: Frames::new(999)
             })
-            .is_none());
+            .is_empty());
     }
 
     #[test]
@@ -757,7 +812,11 @@ mod tests {
         };
         // Undoing the creation of a point removes it, because there was
         // nothing there before.
-        let undo_first = state.inverse_of(&first).expect("there is an inverse");
+        let undo_first = state
+            .inverses_of(&first)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&first);
         assert_eq!(
             state
@@ -775,7 +834,11 @@ mod tests {
             value: 0.75,
             interpolation: Interpolation::Smooth,
         };
-        let undo_second = state.inverse_of(&second).expect("there is an inverse");
+        let undo_second = state
+            .inverses_of(&second)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&second);
         state.apply(&undo_second);
         assert_eq!(
@@ -815,7 +878,11 @@ mod tests {
             address: address.clone(),
             enabled: false,
         };
-        let undo = state.inverse_of(&disable).expect("there is an inverse");
+        let undo = state
+            .inverses_of(&disable)
+            .into_iter()
+            .next()
+            .expect("there is an inverse");
         state.apply(&disable);
 
         let track = state
@@ -883,7 +950,7 @@ mod tests {
             position: Frames::new(500_000),
             lane: 5,
         };
-        let Some(inverse) = state.inverse_of(&edit) else {
+        let Some(inverse) = state.inverses_of(&edit).into_iter().next() else {
             unreachable!("a move of an existing placement always has an inverse")
         };
         state.apply(&edit);
@@ -895,20 +962,18 @@ mod tests {
     #[test]
     fn undoing_something_that_never_existed_has_no_inverse() {
         let state = ProjectState::new();
-        assert_eq!(
-            state.inverse_of(&OperationPayload::RemovePlacement {
+        assert!(state
+            .inverses_of(&OperationPayload::RemovePlacement {
                 placement: PlacementId::new(1)
-            }),
-            None
-        );
-        assert_eq!(
-            state.inverse_of(&OperationPayload::MovePlacement {
+            })
+            .is_empty());
+        assert!(state
+            .inverses_of(&OperationPayload::MovePlacement {
                 placement: PlacementId::new(1),
                 position: Frames::ZERO,
                 lane: 0
-            }),
-            None
-        );
+            })
+            .is_empty());
     }
 
     #[test]
@@ -926,7 +991,7 @@ mod tests {
         let remove = OperationPayload::RemoveMarker {
             marker: MarkerId::new(1),
         };
-        let Some(inverse) = state.inverse_of(&remove) else {
+        let Some(inverse) = state.inverses_of(&remove).into_iter().next() else {
             unreachable!()
         };
         state.apply(&remove);

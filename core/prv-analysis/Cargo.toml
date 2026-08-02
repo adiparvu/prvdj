@@ -9,6 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+prv-dsp = { path = "../prv-dsp" }
 prv-harmony = { path = "../prv-harmony" }
 prv-time = { path = "../prv-time" }
 

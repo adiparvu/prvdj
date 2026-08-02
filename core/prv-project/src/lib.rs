@@ -63,7 +63,7 @@ mod operation;
 pub mod parameter;
 mod state;
 
-pub use log::{Conflict, ConflictKind, MergeReport, OperationLog, ProjectError};
+pub use log::{Conflict, ConflictKind, MergeReport, OperationLog, ProjectError, Undo};
 pub use operation::{
     DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload, PlacementId, Target,
     TrackRef, VersionVector,

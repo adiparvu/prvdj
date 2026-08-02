@@ -244,61 +244,63 @@ impl Biquad {
     }
 }
 
-/// The K-weighting high shelf, derived for a given sample rate.
+/// The two K-weighting sections, taken from `prv-dsp`.
 ///
-/// This is not a general-purpose shelving filter with plausible parameters. It
-/// is the published re-derivation of the standard's own filter: the same
-/// analogue prototype, bilinear-transformed at the requested rate. At 48 kHz it
-/// reproduces the coefficient table in the standard to twelve digits, which is
-/// what the test asserts and what makes every measurement here comparable with
-/// every other tool a user might check against.
+/// # Why the derivation is not here
 ///
-/// A generic shelf with the same corner frequency and a Butterworth Q comes
-/// within a quarter of a decibel at 1 kHz. That sounds close and is not: it
-/// puts a full-scale 1 kHz sine at −3.26 LUFS instead of the −3.01 the whole
-/// scale is anchored to, so every loudness number the product reported would be
-/// wrong by the same amount, consistently, and therefore invisibly.
-fn high_shelf(rate: f64) -> Biquad {
-    // The prototype's parameters, from the standard's derivation.
-    const FREQUENCY: f64 = 1_681.974_450_955_533;
-    const GAIN_DB: f64 = 3.999_843_853_973_347;
-    const Q: f64 = 0.707_175_236_955_419_6;
-
-    let k = (core::f64::consts::PI * FREQUENCY / rate).tan();
-    let high_gain = 10.0_f64.powf(GAIN_DB / 20.0);
-    // The band gain is the high gain raised to a power fixed by the prototype;
-    // it is what makes the transition follow the analogue response rather than
-    // a digital approximation of it.
-    let band_gain = high_gain.powf(0.499_666_774_154_541_6);
-
-    let denominator = 1.0 + k / Q + k * k;
-    Biquad {
-        b0: (high_gain + band_gain * k / Q + k * k) / denominator,
-        b1: 2.0 * (k * k - high_gain) / denominator,
-        b2: (high_gain - band_gain * k / Q + k * k) / denominator,
-        a1: 2.0 * (k * k - 1.0) / denominator,
-        a2: (1.0 - k / Q + k * k) / denominator,
-    }
+/// The realtime meter measures the same quantity live, and a user watching a
+/// meter and a user reading an export report must be looking at the same
+/// number. They can only be the same number if the filter is the same filter,
+/// so there is one derivation — in the crate that owns filters — rather than
+/// two that agree until somebody improves one of them.
+///
+/// The parameters are the standard's own prototype, not a generic shelf with
+/// the same corner frequency. A generic one comes within a quarter of a decibel
+/// at 1 kHz, which sounds close and is not: it puts a full-scale 1 kHz sine at
+/// −3.26 LUFS instead of the −3.01 the whole scale is anchored to, so every
+/// loudness number the product reported would be wrong by the same amount,
+/// consistently, and therefore invisibly.
+fn weighting_sections(rate: f64) -> [Biquad; 2] {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the rate came from a SampleRate and round-trips exactly"
+    )]
+    let sample_rate = SampleRate::new(rate as u32).unwrap_or(SampleRate::HZ_48000);
+    let passthrough = prv_dsp::BiquadCoefficients::PASSTHROUGH;
+    let stages = prv_dsp::k_weighting(sample_rate);
+    [
+        from_coefficients(stages.first().copied().unwrap_or(passthrough)),
+        from_coefficients(stages.get(1).copied().unwrap_or(passthrough)),
+    ]
 }
 
-/// The K-weighting high-pass, derived for a given sample rate.
-///
-/// A second-order high-pass with unity numerator, which is what the standard
-/// specifies. Content below its corner moves air without contributing to how
-/// loud something sounds.
-fn high_pass(rate: f64) -> Biquad {
-    const FREQUENCY: f64 = 38.135_470_876_024_44;
-    const Q: f64 = 0.500_327_037_323_877_3;
+/// Adopts a coefficient set designed elsewhere.
+fn from_coefficients(coefficients: prv_dsp::BiquadCoefficients) -> Biquad {
+    let [b0, b1, b2, a1, a2] = coefficients.as_array();
+    Biquad { b0, b1, b2, a1, a2 }
+}
 
-    let k = (core::f64::consts::PI * FREQUENCY / rate).tan();
-    let denominator = 1.0 + k / Q + k * k;
-    Biquad {
+/// The K-weighting high shelf.
+fn high_shelf(rate: f64) -> Biquad {
+    weighting_sections(rate).first().copied().unwrap_or(Biquad {
         b0: 1.0,
-        b1: -2.0,
-        b2: 1.0,
-        a1: 2.0 * (k * k - 1.0) / denominator,
-        a2: (1.0 - k / Q + k * k) / denominator,
-    }
+        b1: 0.0,
+        b2: 0.0,
+        a1: 0.0,
+        a2: 0.0,
+    })
+}
+
+/// The K-weighting high-pass.
+fn high_pass(rate: f64) -> Biquad {
+    weighting_sections(rate).get(1).copied().unwrap_or(Biquad {
+        b0: 1.0,
+        b1: 0.0,
+        b2: 0.0,
+        a1: 0.0,
+        a2: 0.0,
+    })
 }
 
 /// The mean square of each overlapping window.

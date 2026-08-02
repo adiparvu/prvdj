@@ -432,9 +432,20 @@ impl Timeline {
         };
         self.check_free(snapped)?;
         self.clips.insert(snapped.id.get(), snapped);
+
+        // `PlaceTrack` cannot carry a source offset — ADR-0003 forbids
+        // redefining it, so the offset is its own operation. A clip added with
+        // one (the second half of a split, or a placement that starts at an
+        // analysed intro) would otherwise reload at offset zero, with the audio
+        // under it slid back to the start of the file.
+        let mut operations = vec![place(snapped)];
+        if snapped.source_offset.get() != 0 {
+            operations.push(set_source(snapped));
+        }
+
         Ok(Edit {
             clips: vec![snapped],
-            operations: vec![place(snapped)],
+            operations,
         })
     }
 
@@ -1446,6 +1457,50 @@ mod tests {
                 .add(clip(u64::MAX, 1, 0, BAR), &grid(), Snap::Off)
                 .err(),
             Some(EditError::TooManyClips { maximum: MAX_CLIPS })
+        );
+    }
+
+    #[test]
+    fn a_clip_added_with_a_source_offset_keeps_it_through_the_document() {
+        // `PlaceTrack` cannot carry the offset, so adding a clip that has one —
+        // the second half of a split, or a placement that starts at an analysed
+        // intro — emitted a document that reloaded at offset zero, with the
+        // audio under it slid back to the start of the file.
+        let mut timeline = Timeline::new();
+        let clip = Clip {
+            id: PlacementId::new(1),
+            track: TrackRef::new(1),
+            lane: 0,
+            start: Frames::new(0),
+            length: Frames::new(48_000),
+            source_offset: Frames::new(96_000),
+        };
+
+        let edit = timeline
+            .add(clip, &grid(), Snap::Off)
+            .expect("a clip that fits");
+
+        let mut state = prv_project::ProjectState::new();
+        for operation in &edit.operations {
+            state.apply(operation);
+        }
+
+        let stored = state
+            .placements
+            .get(&PlacementId::new(1))
+            .map(|placement| placement.source_offset);
+        assert_eq!(
+            stored,
+            Some(Frames::new(96_000)),
+            "the document forgot where the clip begins in its source"
+        );
+
+        let (rebuilt, skipped) = Timeline::from_project(&state);
+        assert_eq!(skipped, 0);
+        assert_eq!(
+            rebuilt.clip(PlacementId::new(1)).map(|c| c.source_offset),
+            Some(Frames::new(96_000)),
+            "the refold disagrees with the live timeline"
         );
     }
 }

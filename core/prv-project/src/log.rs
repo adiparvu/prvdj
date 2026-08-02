@@ -104,6 +104,54 @@ impl fmt::Display for Conflict {
     }
 }
 
+/// What undoing a device's last edit would do.
+///
+/// # Why this is not simply a list of operations
+///
+/// In a shared project, "undo my last edit" can collide with somebody else's
+/// later one. If I move a clip and you then move it again, the inverse of *my*
+/// move — computed against the state before it — puts the clip back where it was
+/// before either of us touched it, discarding your work without saying so.
+///
+/// Master Prompt #24 forbids silently discarding work and requires conflicts to
+/// be explained, so this reports the collision instead of performing it and the
+/// interface asks rather than guesses. Refusing is not a limitation to remove
+/// later: there is no correct silent answer, and the two plausible ones — revert
+/// theirs, or ignore mine — are each wrong for somebody.
+// Not `Eq`: an operation carries a payload whose parameter values are floating
+// point, and ADR-0003 records why those are compared for equality and not for
+// identity.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum Undo {
+    /// The device has nothing left to undo.
+    Nothing,
+    /// Another device changed the same thing afterwards.
+    Superseded {
+        /// Which device.
+        by: DeviceId,
+    },
+    /// The operations that would undo it.
+    Operations(Vec<Operation>),
+}
+
+impl Undo {
+    /// The operations, if there are any.
+    #[must_use]
+    pub fn operations(&self) -> &[Operation] {
+        match self {
+            Self::Operations(operations) => operations,
+            Self::Nothing | Self::Superseded { .. } => &[],
+        }
+    }
+
+    /// Whether anything would happen.
+    #[must_use]
+    pub const fn is_possible(&self) -> bool {
+        matches!(self, Self::Operations(_))
+    }
+}
+
 /// What a merge did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MergeReport {
@@ -206,6 +254,44 @@ impl OperationLog {
             timestamp_micros,
             payload,
         }
+    }
+
+    /// Creates a run of operations authored by one device, without appending
+    /// them.
+    ///
+    /// # Why this exists rather than calling `author` in a loop
+    ///
+    /// `author` numbers an operation from what the log has *seen*, so two calls
+    /// before an append produce the same identity. That was invisible while a
+    /// gesture was one operation. Since `prv-timeline::Edit` began carrying a
+    /// list — trimming the front of a clip is two, deleting one with automation
+    /// is many, undoing a removal is two — the natural loop has been producing
+    /// colliding identifiers, and the second append fails or, across a branch,
+    /// two different payloads share a name.
+    ///
+    /// This numbers the whole run at once. Every gesture that produces more than
+    /// one operation goes through it.
+    #[must_use]
+    pub fn author_all(
+        &self,
+        device: DeviceId,
+        timestamp_micros: i64,
+        payloads: Vec<OperationPayload>,
+    ) -> Vec<Operation> {
+        let base = self.seen.sequence_for(device);
+        payloads
+            .into_iter()
+            .enumerate()
+            .map(|(offset, payload)| {
+                let step = u64::try_from(offset).unwrap_or(u64::MAX);
+                Operation {
+                    id: OperationId::new(device, base.saturating_add(step).saturating_add(1)),
+                    context: self.seen.clone(),
+                    timestamp_micros,
+                    payload,
+                }
+            })
+            .collect()
     }
 
     /// Appends an operation, keeping the log in total order.
@@ -387,11 +473,31 @@ impl OperationLog {
         Ok(report)
     }
 
-    /// Authors the operation that undoes the last one a device made.
+    /// What undoing a device's last edit would do.
     ///
-    /// Returns `None` when the device has nothing left to undo, or when what it
-    /// did has no inverse — undoing the removal of something that was never
-    /// there.
+    /// # Why this is not simply a list of operations
+    ///
+    /// In a shared project, "undo my last edit" can collide with somebody
+    /// else's later one. If I move a clip and you then move it again, the
+    /// inverse of *my* move — computed against the state before it — puts the
+    /// clip back where it was before either of us touched it, discarding your
+    /// work without saying so.
+    ///
+    /// Master Prompt #24 forbids silently discarding work and requires
+    /// conflicts to be explained. So this reports the collision instead of
+    /// performing it, and the interface asks rather than guesses. Refusing is
+    /// not a limitation to remove later: there is no correct silent answer, and
+    /// the two plausible ones — revert theirs, or ignore mine — are both wrong
+    /// for somebody.
+    /// Authors the operations that undo the last one a device made.
+    ///
+    /// Returns an empty list when the device has nothing left to undo, or when
+    /// what it did has no inverse — undoing the removal of something that was
+    /// never there.
+    ///
+    /// A list because one gesture's inverse can need more than one operation:
+    /// restoring a trimmed clip takes a placement and the source offset that
+    /// `PlaceTrack` cannot carry.
     ///
     /// # Why by device
     ///
@@ -399,17 +505,42 @@ impl OperationLog {
     /// happened last". Undoing a collaborator's work because they happened to
     /// act more recently would be the least expected behaviour available.
     #[must_use]
-    pub fn undo_for(&self, device: DeviceId, timestamp_micros: i64) -> Option<Operation> {
-        let position = self
+    pub fn undo_for(&self, device: DeviceId, timestamp_micros: i64) -> Undo {
+        let Some(position) = self
             .operations
             .iter()
-            .rposition(|operation| operation.id.device == device)?;
-        let operation = self.operations.get(position)?;
+            .rposition(|operation| operation.id.device == device)
+        else {
+            return Undo::Nothing;
+        };
+        let Some(operation) = self.operations.get(position) else {
+            return Undo::Nothing;
+        };
+
+        // Somebody else may have changed the same thing since. Undoing against
+        // a state they have moved on from would revert their work as well as
+        // mine, and Master Prompt #24 forbids discarding work silently.
+        let target = operation.payload.target();
+        if let Some(later) = self
+            .operations
+            .get(position.saturating_add(1)..)
+            .unwrap_or_default()
+            .iter()
+            .find(|candidate| candidate.id.device != device && candidate.payload.target() == target)
+        {
+            return Undo::Superseded {
+                by: later.id.device,
+            };
+        }
+
         // The state as it was immediately before that operation is what the
         // inverse must be computed against.
         let before = self.materialise(position);
-        let inverse = before.inverse_of(&operation.payload)?;
-        Some(self.author(device, timestamp_micros, inverse))
+        let inverses = before.inverses_of(&operation.payload);
+        if inverses.is_empty() {
+            return Undo::Nothing;
+        }
+        Undo::Operations(self.author_all(device, timestamp_micros, inverses))
     }
 }
 
@@ -759,8 +890,10 @@ mod tests {
         let before_undo = log.len();
 
         let undo = log.undo_for(device(1), 0);
-        assert!(undo.is_some());
-        let Some(undo) = undo else { return };
+        assert!(undo.is_possible());
+        let Some(undo) = undo.operations().first().cloned() else {
+            return;
+        };
         assert!(log.append(undo).is_ok());
 
         assert_eq!(
@@ -784,12 +917,12 @@ mod tests {
         commit(&mut log, 1, place(1, 0));
         commit(&mut log, 1, move_to(1, 200_000));
 
-        let Some(undo) = log.undo_for(device(1), 0) else {
+        let Some(undo) = log.undo_for(device(1), 0).operations().first().cloned() else {
             unreachable!()
         };
         assert!(log.append(undo).is_ok());
 
-        let Some(redo) = log.undo_for(device(1), 0) else {
+        let Some(redo) = log.undo_for(device(1), 0).operations().first().cloned() else {
             unreachable!()
         };
         assert!(log.append(redo).is_ok());
@@ -813,7 +946,7 @@ mod tests {
         commit(&mut log, 1, place(1, 0));
         commit(&mut log, 2, place(2, 48_000));
 
-        let Some(undo) = log.undo_for(device(1), 0) else {
+        let Some(undo) = log.undo_for(device(1), 0).operations().first().cloned() else {
             unreachable!()
         };
         assert!(log.append(undo).is_ok());
@@ -832,12 +965,13 @@ mod tests {
     #[test]
     fn undo_with_nothing_to_undo_returns_nothing() {
         let log = OperationLog::new();
-        assert!(log.undo_for(device(1), 0).is_none());
+        assert_eq!(log.undo_for(device(1), 0), Undo::Nothing);
 
         let mut other = OperationLog::new();
         commit(&mut other, 2, place(1, 0));
-        assert!(
-            other.undo_for(device(1), 0).is_none(),
+        assert_eq!(
+            other.undo_for(device(1), 0),
+            Undo::Nothing,
             "a device with no edits has nothing to undo"
         );
     }
@@ -857,7 +991,7 @@ mod tests {
         );
         assert_eq!(log.state().markers.len(), 1);
 
-        let Some(undo) = log.undo_for(device(1), 0) else {
+        let Some(undo) = log.undo_for(device(1), 0).operations().first().cloned() else {
             unreachable!()
         };
         assert!(log.append(undo).is_ok());
@@ -917,6 +1051,117 @@ mod tests {
         assert_eq!(
             conflict.to_string(),
             "device:1#2 and device:2#1 both changed placement:4 — both edited this at the same time"
+        );
+    }
+
+    #[test]
+    fn a_run_of_operations_gets_a_run_of_identities() {
+        // `author` numbers from what the log has seen, so two calls before an
+        // append produce the same identity. That was invisible while a gesture
+        // was one operation; since `prv-timeline::Edit` began carrying a list,
+        // the natural loop has been minting collisions.
+        let log = OperationLog::new();
+        let run = log.author_all(
+            device(1),
+            0,
+            vec![place(1, 0), move_to(1, 48_000), move_to(1, 24_000)],
+        );
+
+        assert_eq!(run.len(), 3);
+        let identities: Vec<u64> = run.iter().map(|operation| operation.id.sequence).collect();
+        assert_eq!(identities, vec![1, 2, 3], "the run reused an identity");
+
+        let mut log = log;
+        for operation in run {
+            assert!(
+                log.append(operation).is_ok(),
+                "a run authored together must append together"
+            );
+        }
+    }
+
+    #[test]
+    fn undoing_a_removal_restores_where_the_clip_began_in_its_source() {
+        // `PlaceTrack` cannot carry a source offset — ADR-0003 forbids
+        // redefining it — so restoring a trimmed clip takes two operations.
+        // With one, the audio under it slid back to the start of the file on
+        // undo, silently.
+        let mut log = OperationLog::new();
+        commit(&mut log, 1, place(1, 0));
+        commit(
+            &mut log,
+            1,
+            OperationPayload::SetPlacementSource {
+                placement: PlacementId::new(1),
+                source_offset: Frames::new(96_000),
+            },
+        );
+        commit(
+            &mut log,
+            1,
+            OperationPayload::RemovePlacement {
+                placement: PlacementId::new(1),
+            },
+        );
+        assert!(log.state().placements.is_empty());
+
+        let undo = log.undo_for(device(1), 0);
+        assert!(undo.is_possible());
+        assert_eq!(
+            undo.operations().len(),
+            2,
+            "restoring a trimmed clip takes a placement and its source offset"
+        );
+        for operation in undo.operations().to_vec() {
+            assert!(log.append(operation).is_ok());
+        }
+
+        let restored = log
+            .state()
+            .placements
+            .get(&PlacementId::new(1))
+            .copied()
+            .map(|placement| placement.source_offset);
+        assert_eq!(
+            restored,
+            Some(Frames::new(96_000)),
+            "the audio under the restored clip slid back to the start of the file"
+        );
+    }
+
+    #[test]
+    fn an_undo_that_would_revert_somebody_elses_later_edit_is_refused() {
+        // Master Prompt #24 forbids discarding work silently. The inverse of my
+        // move is computed against the state before it, so performing it would
+        // put the clip back where it was before either of us touched it.
+        let mut log = OperationLog::new();
+        commit(&mut log, 1, place(1, 0));
+        commit(&mut log, 1, move_to(1, 200_000));
+        commit(&mut log, 2, move_to(1, 300_000));
+
+        assert_eq!(
+            log.undo_for(device(1), 0),
+            Undo::Superseded { by: device(2) },
+            "my undo silently reverted somebody else's later move"
+        );
+
+        // And the other device, whose edit *is* the latest, can still undo.
+        assert!(log.undo_for(device(2), 0).is_possible());
+    }
+
+    #[test]
+    fn an_edit_to_something_else_does_not_block_an_undo() {
+        // The refusal is about the same target, not about anybody having
+        // touched the project since. A collaborator working on another clip
+        // must not freeze my undo.
+        let mut log = OperationLog::new();
+        commit(&mut log, 1, place(1, 0));
+        commit(&mut log, 1, move_to(1, 200_000));
+        commit(&mut log, 2, place(2, 0));
+
+        assert!(
+            log.undo_for(device(1), 0).is_possible(),
+            "an unrelated edit blocked an undo"
         );
     }
 }

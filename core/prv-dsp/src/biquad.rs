@@ -38,6 +38,27 @@ impl BiquadCoefficients {
         a2: 0.0,
     };
 
+    /// Takes coefficients that are already normalised.
+    ///
+    /// For filters whose derivation is published as a set of coefficients
+    /// rather than as a corner frequency and a Q — the K-weighting of the
+    /// broadcast loudness standard is the one that matters here, and it is
+    /// specified by its prototype's own parameters rather than by anything a
+    /// generic design would produce.
+    #[must_use]
+    pub const fn from_normalised(b0: f64, b1: f64, b2: f64, a1: f64, a2: f64) -> Self {
+        Self { b0, b1, b2, a1, a2 }
+    }
+
+    /// The five coefficients, in the order a difference equation uses them.
+    ///
+    /// For a caller that applies them with its own state, at a precision this
+    /// crate does not impose.
+    #[must_use]
+    pub const fn as_array(self) -> [f64; 5] {
+        [self.b0, self.b1, self.b2, self.a1, self.a2]
+    }
+
     /// Designs a low-pass section.
     ///
     /// Uses the bilinear transform with frequency pre-warping, so the corner

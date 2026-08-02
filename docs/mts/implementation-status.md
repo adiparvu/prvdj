@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 25._
+_Last updated: Sprint 26._
 
 ## Sprint 0 — Foundation
 
@@ -290,6 +290,17 @@ _Last updated: Sprint 25._
 | Allocation gate for the streaming path | Completed | Verified | Caught a `to_vec` in both `read` paths before it shipped |
 | `Tile::fold` replaces a chained merge | Completed | Verified | Rendered energy no longer depends on the order of the span |
 | Crossovers validated at the boundary | Completed | Verified | A non-finite crossover no longer poisons the equaliser permanently |
+
+## Sprint 26 — The live meter, and four defects an adversarial review found
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-dsp::LoudnessMeter` | Completed | Verified | Momentary and short-term; a full-scale sine reads −3.01 LUFS at three rates |
+| One K-weighting derivation, two users | Completed | Verified | `prv-analysis` now takes the filter from `prv-dsp`; its published-table tests still pass |
+| `OperationLog::author_all` | Completed | Verified | A run of operations gets a run of identities; the loop was minting collisions |
+| `ProjectState::inverses_of` | Completed | Verified | An inverse may need more than one operation; undoing a removal restores the source offset |
+| `Timeline::add` records the source offset | Completed | Verified | A clip added with one no longer reloads at zero |
+| An undo that would revert another device is refused | Completed | Verified | `Undo::Superseded` names who, rather than discarding their work silently |
 
 ## Where the core stands
 
