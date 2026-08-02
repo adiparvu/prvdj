@@ -1,0 +1,14 @@
+[package]
+name = "prv-settings"
+description = "Preferences, experience modes and accessibility — what the product offers, never what it permits."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

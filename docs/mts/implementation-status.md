@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 17._
+_Last updated: Sprint 18._
 
 ## Sprint 0 — Foundation
 
@@ -204,6 +204,16 @@ _Last updated: Sprint 17._
 | `prv-security` audit | Completed | Verified | Four closed vocabularies and no personal data; discards are counted, never silent |
 | Architecture rule 8 — no credential material committed | Completed | Verified | Scans tracked and staged files; exercised against a planted key |
 | Architecture rule 2 no longer matches prose | Completed | Verified | Comments stripped before matching; still fails on real unsafe code |
+
+## Sprint 18 — Preferences
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-settings` experience modes | Completed | Verified | A mode changes what is offered, never what is possible; assistance decreases monotonically |
+| `prv-settings` setting vocabulary | Completed | Verified | Only assistance settings may follow the mode, checked over every setting in both directions |
+| `prv-settings` document | Completed | Verified | Only choices are stored; a withdrawn choice returns to following the mode |
+| Unrecognised settings preserved | Completed | Verified | An older build no longer deletes a newer build's preferences on launch |
+| `prv-settings` accessibility | Completed | Verified | The platform can add an accommodation and nothing here can withdraw one |
 
 ## Not started
 

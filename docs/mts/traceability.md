@@ -193,6 +193,12 @@ did not have would be worse than no row at all.
 | An audit trail records decisions, not people | MP#26 | `prv-security::audit::Entry` | `an_entry_cannot_be_rendered_into_anything_but_stable_keys`, `the_actor_is_the_kind_and_never_the_person` | **Verified** |
 | An audit log never forgets silently | MP#26, MP#9 | `prv-security::AuditLog::discarded` | `an_overflowing_log_says_how_many_it_dropped` | **Verified** |
 | Permission and agreement are separate checks | MP#26 | `prv-security` | `permission_and_agreement_are_two_different_questions` | **Verified** |
+| The interface never intervenes uninvited for a professional | MP#8 | `prv-settings::ExperienceMode` | `the_professional_mode_is_quiet_rather_than_reduced`, `assistance_decreases_and_never_reverses` | **Verified** |
+| A mode changes what is offered, never what is possible | MP#8, MP#29 | `prv-settings::Category::follows_the_mode` | `only_assistance_settings_follow_the_mode`, `no_mode_changes_anything_but_assistance`, `a_professional_gets_quiet_and_loses_nothing` | **Verified** |
+| A mode change never overrules an explicit choice | MP#8, MP#9 | `prv-settings::Settings::set_mode` | `changing_mode_never_discards_a_choice_the_user_made`, `withdrawing_a_choice_returns_to_following_the_mode` | **Verified** |
+| A platform accommodation is never withdrawn by a preference | MP#8, MP#16 | `prv-settings::Accessibility` | `the_platform_can_turn_reduced_motion_on_and_the_application_cannot_turn_it_off`, `an_accommodation_survives_every_other_preference` | **Verified** |
+| Text scaling is limited by the platform, not by the layout | MP#8, MP#16 | `prv-settings::PlatformAccessibility` | `the_text_scale_limit_comes_from_the_platform_not_from_the_layout` | **Verified** |
+| An older build does not delete a newer build's preferences | MP#9, MP#24 | `prv-settings::Settings::keep_unknown` | `a_newer_builds_settings_survive_this_one`, `an_unkeepable_entry_is_reported_rather_than_dropped_quietly` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself
