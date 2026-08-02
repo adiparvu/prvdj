@@ -3,16 +3,30 @@
 Master Prompt #28 requires known issues to be documented before a release is
 approved. Recording them here, plainly, is cheaper than discovering them later.
 
-## 1. No Apple-framework code has been compiled
+## 1. No Apple-*framework* code has been compiled
 
 The continuous-integration environment available for this work is Linux. It
-compiles and tests the Rust core and framework-free Swift. It cannot compile
-SwiftUI, AVFoundation, AudioToolbox or CoreAudio, which require the Apple SDKs.
+compiles and tests the Rust core, the C boundary, and Swift that imports no Apple
+framework. It cannot compile SwiftUI, AVFoundation, AudioToolbox or CoreAudio,
+which require the Apple SDKs.
 
-**Consequence.** Every module in `core/` and the generated Swift token bindings
-are reported as *verified*. Apple-framework modules will be reported as
-*authored* until a macOS runner compiles and tests them. The job exists in the
-workflow and is disabled.
+**This limitation is narrower than it was, and the narrowing was deliberate.**
+It once read "no Apple code has been compiled". Swift 6.1 runs on Linux, and
+`PRVCore` — the wrapper over the C boundary, where pointer lifetimes, the audio
+callback and every error code live — imports nothing but Foundation. So it is
+built and tested on every commit, on a Linux runner, against the real static
+library. That is the half of the Apple layer where a mistake is unrecoverable,
+and it is now verified rather than merely written.
+
+Keeping `PRVCore` free of framework imports is what buys that, which is why the
+package is split the way it is: `PRVKit` is where CoreAudio and the keychain
+arrive, and it is a separate target precisely so the untestable half cannot
+swallow the testable half.
+
+**Consequence.** Every module in `core/`, the generated bindings, and `PRVCore`
+are reported as *verified*. `PRVKit`'s framework adapters and all of `PRVUI` are
+reported as *authored* until a macOS runner compiles and tests them. The job
+exists in the workflow and is disabled.
 
 Reporting authored code as working would violate Master Prompt #13 and #27, so
 the distinction is maintained explicitly in

@@ -27,13 +27,16 @@ I infrastructure, P presentation.
 | `settings` | Preferences, modes, capability flags | A | `core/prv-settings` | MP#8 |
 | `licensing` | Entitlements, tiers, feature availability | A | `core/prv-entitlements` | MP#29 |
 | `analytics` | Metrics, diagnostics, telemetry consent | A | `core/prv-telemetry` | MP#8, MP#26 |
+| `render` | Turning a project into audio, block-size independent | A | `core/prv-render` | MP#3A, MP#3C |
+| `ffi` | The C ABI boundary: handles, statuses, the render entry point | A | `core/prv-ffi` | ADR-0001, MP#4 |
 | `notifications` | Notification model, delivery preferences | A | `core/prv-notify` | MP#24 |
 
 ### Swift side
 
 | Module ID | Purpose | L | Location |
 |-----------|---------|---|----------|
-| `prv-bridge` | Generated FFI bindings, buffer ownership, error mapping | I | `apple/PRVKit/Bridge` |
+| `prv-bridge` | Generated C header and module map, emitted by `bridgegen` | I | `apple/PRVKit/Bridge/Generated` |
+| `prv-core-swift` | Safe Swift over the boundary; imports no Apple framework, so it is tested on Linux | I | `apple/Sources/PRVCore` |
 | `audio-host` | CoreAudio/AVAudioEngine render host, device management | I | `apple/PRVKit/AudioHost` |
 | `platform-io` | File access, security-scoped bookmarks, decoders | I | `apple/PRVKit/PlatformIO` |
 | `secure-store` | Keychain, device authorisation, session handling | I | `apple/PRVKit/SecureStore` |

@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 28._
+_Last updated: Sprint 30._
 
 ## Sprint 0 — Foundation
 
@@ -377,11 +377,44 @@ changes what the planner decides, so the first test is not theatre.
 a commit needs to be diffed, not just listed, when anything else has write access
 to the tree. The review workflow has since been stopped.
 
+## Sprints 29–30 — The application layer begins
+
+Twenty-three crates of musical judgement, and no way for a host to reach any of
+it. That is why the application did not exist yet, and it is what these two
+sprints are about.
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi` — the C ABI | Completed | Verified | One opaque handle; every entry point guarded against a panic reaching C |
+| Panic containment at the boundary | Completed | Verified | Unwinding into C is undefined behaviour; `PRV_PANICKED` is a defect report, not a condition |
+| Audio as a host callback | Completed | Verified | The renderer reads what it needs in the order it needs it; a push model cannot see a seek coming |
+| `bridgegen` — generated header and module map | Completed | Verified | Each declaration paired with a typed reference to the real function, so a changed signature is a compile error |
+| A C host drives the boundary | Completed | Verified | Compiled with `-Werror` against the committed header, linked to the real archive, rendering through a C callback |
+| Architecture rule 9 — bindings are current | Completed | Enforced | Verified against a deliberately drifted header |
+| `PRVCore` — safe Swift over the boundary | Completed | **Verified on Linux** | 15 tests, real Swift 6.1, real static library |
+| `PRVKit` framework adapters | Not started | — | CoreAudio, AVFoundation, keychain — the genuinely unverifiable part |
+| `PRVUI` | Not started | — | SwiftUI |
+
+### The limitation that shrank
+
+R-01 used to read "no Apple code has been compiled". It now reads "no
+Apple-*framework* code has been compiled", and the difference is the point.
+
+Swift 6.1 runs on Linux. `PRVCore` — the layer holding pointer lifetimes, the
+audio callback and every error code, where a mistake is unrecoverable and silent
+— imports nothing but Foundation, so it builds and its tests run on every
+commit against the real library. Keeping it free of framework imports is what
+buys that, and it is why `PRVKit` is a separate target: so the untestable half
+cannot swallow the testable half.
+
+What remains genuinely unverified here is CoreAudio, AVFoundation, the keychain
+and SwiftUI. That is a real gap and a much smaller one than "the Apple layer".
+
 ## Where the core stands
 
 Every one of the eighteen bounded contexts in the [module
 index](03-module-index.md) now has a crate in `core/`, built and tested here.
-Twenty-three crates, acyclic, with no third-party runtime dependency.
+Twenty-four crates, acyclic, with no third-party runtime dependency.
 
 What that does **not** mean, and the distinction is the point of this document:
 the core *decides*; it does not *act*. There is no code here that opens a file, a

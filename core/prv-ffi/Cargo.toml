@@ -9,10 +9,16 @@ authors.workspace = true
 repository.workspace = true
 
 [lib]
-# `staticlib` is what the Apple targets link. `cdylib` is what the C harness in
-# `tests/` loads, and what a non-Apple host would use. `rlib` is what the crate's
-# own tests link against.
-crate-type = ["staticlib", "cdylib", "rlib"]
+# `staticlib` is what every host links: the Apple targets, the C harness in
+# `tests/`, and the Swift package. `rlib` is what this crate's own tests link
+# against.
+#
+# Deliberately no `cdylib`. Producing one as well puts a `libprv_ffi.so` beside
+# the archive, and a Unix linker given `-lprv_ffi` prefers the shared object —
+# so `swift test` would build against the archive's declarations and then fail
+# to start for want of a library at run time. There is no host that wants the
+# shared object, so the simplest fix is not to make one.
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 prv-project = { path = "../prv-project" }

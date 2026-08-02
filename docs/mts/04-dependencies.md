@@ -7,7 +7,7 @@ existential problem four years from now.
 
 ## Portable core
 
-**The core has no third-party runtime dependencies.** Twenty-three crates, zero.
+**The core has no third-party runtime dependencies.** Twenty-four crates, zero.
 Two of them depend on other core crates — `prv-plugin` on `prv-security`, so that
 authorisation has one decision point rather than two, and `prv-ai` on `prv-mix`,
 `prv-time` and `prv-security`, because an orchestrator that could not name the
@@ -38,7 +38,8 @@ Additions to the core require an entry in the table below and a review.
 | Toolchain | Version | Reason | Risk | Replacement strategy |
 |-----------|---------|--------|------|----------------------|
 | Rust | stable, ≥ 1.82 | Portable core (ADR-0001) | Low | Pinned in `core/rust-toolchain.toml`; the core uses no nightly features |
-| Swift | 6.1 | Apple application layer | Low | Platform requirement, not a choice |
+| Swift | 6.1 | Apple application layer, and `PRVCore` on Linux | Low | Platform requirement, not a choice. Swift 6.1 runs on Linux, which is what lets the boundary wrapper be tested without macOS capacity |
+| C compiler | any C11 | Compiles the host harness in `prv-ffi/tests` | Low | Test-only; the harness is the only thing that proves the generated header and the library agree |
 
 ## Platform frameworks
 

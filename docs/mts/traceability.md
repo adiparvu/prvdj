@@ -151,6 +151,12 @@ did not have would be worse than no row at all.
 | Thinning is safe to run on every save | MP#24 | `prv-sync::backup::thin` | `thinning_twice_changes_nothing` | **Verified** |
 | The project refers to media, never contains it | MP#29, ADR-0003 | `prv-project::TrackRef` | structural — a placement holds a reference | **Verified** |
 | Offline-first | MP#1, MP#24 | ADR-0001, ADR-0006 | the core has no network dependency, enforced by rule 1 | **Enforced** |
+| The language boundary is coarse-grained | MP#4, ADR-0001 | `prv-ffi::Engine` | `a_host_can_start_an_engine_place_a_track_and_hear_it` | **Verified** |
+| The language boundary is versioned | MP#4 | `prv-ffi::abi` | `a_host_from_another_major_version_is_turned_away`, the C host's own version check | **Verified** |
+| A panic never crosses into C | ADR-0002, MP#15 | `prv-ffi::guard` | `a_panic_becomes_a_status_rather_than_undefined_behaviour`, `a_panic_inside_a_try_body_is_caught_too` | **Verified** |
+| Bindings are generated, never hand-written | MP#4, MP#28 | `bridgegen` | architecture rule 9, `the_committed_header_is_what_the_generator_produces` | **Enforced** |
+| The header and the library actually agree | MP#27 | `prv-ffi/tests/c_host.rs` | `a_c_host_can_drive_the_boundary_through_the_generated_header` | **Verified** |
+| A host cannot hold the boundary wrongly | MP#4 | `PRVCore.Engine` | `the_source_outlives_the_engines_ability_to_call_it`, `a_buffer_too_small_for_the_block_is_caught_before_the_boundary` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

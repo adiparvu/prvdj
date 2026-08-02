@@ -21,10 +21,18 @@
 //! a parameter in `exports.rs` and not here is a compile error in this file
 //! rather than a wrong number in somebody's audio callback.
 //!
+//! # Two files, not one
+//!
+//! The header is what C reads. The module map beside it is what Swift reads —
+//! `swiftc` imports a C library through a Clang module, and without a module map
+//! there is no module to import. Both are binding artefacts, so both are
+//! generated; a hand-written module map next to a generated header would be the
+//! one file nobody remembers to update.
+//!
 //! # Usage
 //!
-//! - `bridgegen <path>` writes the header.
-//! - `bridgegen --check <path>` exits non-zero if the file on disk differs,
+//! - `bridgegen <path>` writes the header and the module map beside it.
+//! - `bridgegen --check <path>` exits non-zero if either file on disk differs,
 //!   which is what continuous integration runs.
 
 #![allow(
@@ -227,6 +235,22 @@ fn declarations() -> Vec<Declaration> {
     ]
 }
 
+/// Forces every generated enum to have a signed underlying type.
+///
+/// Not a value any function returns, and not one a host should ever compare
+/// against. It exists so the enum's underlying type is `int32_t`, which is what
+/// every function in the header actually takes.
+/// Enumeration constants share one namespace in C, so each enum needs its own
+/// sentinel name — three enums declaring `PRV_ENUM_FORCE_SIGNED` is a
+/// redefinition error, not three private constants.
+fn signed_sentinel(name: &str) -> String {
+    format!(
+        "    /* Not a value. Present so the underlying type is signed, matching the\n\
+        \x20      int32_t every function here takes. Never returned, never compared. */\n\
+        \x20   {name} = -1,\n"
+    )
+}
+
 /// Wraps a signature across lines the way a reader of C expects.
 fn write_signature(out: &mut String, signature: &str) {
     /// Where a declaration gets too wide to read.
@@ -313,12 +337,20 @@ fn header() -> String {
     let _ = writeln!(out, "#define PRV_ABI_MINOR {}", abi::MINOR);
     let _ = write!(out, "#define PRV_ABI_PATCH {}\n\n", abi::PATCH);
 
+    // Every enum here carries a negative sentinel. The C standard leaves an
+    // enum's underlying type implementation-defined, and a compiler that sees
+    // only non-negative members is free to choose `unsigned int` — which is what
+    // Clang does, and what Swift then imports as `UInt32`. Every function in this
+    // header takes and returns `int32_t`, so the constants would need a cast at
+    // every use site in Swift for no reason other than a compiler's freedom to
+    // choose. One negative member removes the freedom.
     out.push_str(
         "/* The result of a call. Zero is success, and it is the only success. */\ntypedef enum PrvStatus {\n",
     );
     for status in Status::ALL {
         let _ = writeln!(out, "    {} = {},", status.c_name(), status.code());
     }
+    out.push_str(&signed_sentinel("PRV_STATUS_FORCE_SIGNED"));
     out.push_str("} PrvStatus;\n\n");
 
     out.push_str("/* What the transport is doing. */\ntypedef enum PrvPlaybackState {\n");
@@ -330,12 +362,14 @@ fn header() -> String {
             prv_ffi::mapping::playback_code(*state)
         );
     }
+    out.push_str(&signed_sentinel("PRV_PLAYBACK_FORCE_SIGNED"));
     out.push_str("} PrvPlaybackState;\n\n");
 
     out.push_str("/* What can happen to the transport. */\ntypedef enum PrvTransportEvent {\n");
     for (index, (_, name)) in TRANSPORT_EVENTS.iter().enumerate() {
         let _ = writeln!(out, "    {name} = {index},");
     }
+    out.push_str(&signed_sentinel("PRV_EVENT_FORCE_SIGNED"));
     out.push_str("} PrvTransportEvent;\n\n");
 
     out.push_str(
@@ -389,6 +423,34 @@ typedef uint32_t (*PrvReadAudio)(void *user_data,
     out
 }
 
+/// The Clang module map Swift imports the header through.
+///
+/// `link "prv_ffi"` is what makes `import CPRVBridge` pull in the static library
+/// as well as the declarations, so a host does not have to repeat the library
+/// name in its own linker settings.
+fn module_map() -> String {
+    "// GENERATED FILE. Do not edit.\n\
+     //\n\
+     // Produced by `cargo run -p prv-ffi --bin bridgegen`, beside the header it\n\
+     // describes. Swift imports a C library through a Clang module, so without\n\
+     // this there is nothing for `import CPRVBridge` to find.\n\
+     \n\
+     module CPRVBridge {\n\
+     \x20   header \"PRVBridge.h\"\n\
+     \x20   link \"prv_ffi\"\n\
+     \x20   export *\n\
+     }\n"
+    .to_owned()
+}
+
+/// Where the module map goes, given where the header goes.
+fn module_map_path(header: &str) -> std::path::PathBuf {
+    std::path::Path::new(header)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("module.modulemap")
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let (check, path) = match arguments.as_slice() {
@@ -402,23 +464,33 @@ fn main() -> ExitCode {
 
     let generated = header();
 
+    let map_path = module_map_path(&path);
+    let map = module_map();
+
     if check {
-        match std::fs::read_to_string(&path) {
-            Ok(existing) if existing == generated => {
-                println!("ok    {path} is current");
-                ExitCode::SUCCESS
+        let mut current = true;
+        for (where_, expected) in [
+            (path.clone(), generated),
+            (map_path.display().to_string(), map),
+        ] {
+            match std::fs::read_to_string(&where_) {
+                Ok(existing) if existing == expected => {}
+                Ok(_) => {
+                    eprintln!("FAIL  {where_} differs from a fresh generation.");
+                    current = false;
+                }
+                Err(error) => {
+                    eprintln!("FAIL  {where_} could not be read: {error}");
+                    current = false;
+                }
             }
-            Ok(_) => {
-                eprintln!(
-                    "FAIL  {path} differs from a fresh generation.\n\
-                           Run: cargo run -p prv-ffi --bin bridgegen -- {path}"
-                );
-                ExitCode::FAILURE
-            }
-            Err(error) => {
-                eprintln!("FAIL  {path} could not be read: {error}");
-                ExitCode::FAILURE
-            }
+        }
+        if current {
+            println!("ok    the generated bindings are current");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("      Run: cargo run -p prv-ffi --bin bridgegen -- {path}");
+            ExitCode::FAILURE
         }
     } else {
         if let Some(parent) = std::path::Path::new(&path).parent() {
@@ -427,16 +499,17 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
-        match std::fs::write(&path, generated) {
-            Ok(()) => {
-                println!("wrote {path}");
-                ExitCode::SUCCESS
+        for (where_, contents) in [
+            (path.clone(), generated),
+            (map_path.display().to_string(), map),
+        ] {
+            if let Err(error) = std::fs::write(&where_, contents) {
+                eprintln!("FAIL  {where_} could not be written: {error}");
+                return ExitCode::FAILURE;
             }
-            Err(error) => {
-                eprintln!("FAIL  {path} could not be written: {error}");
-                ExitCode::FAILURE
-            }
+            println!("wrote {where_}");
         }
+        ExitCode::SUCCESS
     }
 }
 

@@ -136,12 +136,67 @@ jobs:
       - name: Advisories, licences and sources
         run: cargo deny check
 
+  bridge:
+    name: Language boundary (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: ${{ runner.os }}-bridge-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-bridge-
+
+      # The static library every host links. Built before the header is checked
+      # so a failure here is a compile error rather than a missing file.
+      - name: Build the boundary
+        run: cargo build -p prv-ffi --manifest-path core/Cargo.toml
+
+      # The architecture overview requires bindings to be generated rather than
+      # hand-written. A drifting binding does not fail to compile — it computes
+      # the wrong answer — so the check is a gate, not a reminder.
+      - name: Generated bindings are current
+        run: cargo run -p prv-ffi --bin bridgegen --manifest-path core/Cargo.toml -- --check apple/PRVKit/Bridge/Generated/PRVBridge.h
+
+      # A C program compiled against the committed header with -Werror, linked
+      # against the real static library. Rust calling a Rust extern "C" function
+      # proves nothing about the header; this does.
+      - name: C host drives the boundary
+        run: cargo test -p prv-ffi --manifest-path core/Cargo.toml
+
+      - name: Install Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+
+      # PRVCore depends on nothing but Foundation and the boundary, which is
+      # what lets the layer where every mistake is unrecoverable — pointer
+      # lifetimes, error codes, the audio callback — be verified on every commit
+      # rather than only where there is macOS capacity.
+      - name: PRVCore builds and its tests pass
+        run: swift test --package-path apple
+
   apple:
     name: Apple platforms (macOS)
     # Requires a macOS runner with Xcode. Until one is available this job does
-    # not execute, and every Apple-framework module is reported as *authored*
+    # not execute, and every Apple-*framework* module is reported as *authored*
     # rather than *verified* in the implementation status board. Reporting it
     # otherwise would violate Master Prompt #13 and #27.
+    #
+    # This covers less than it once did. `PRVCore` — the boundary wrapper, where
+    # pointer lifetimes and the audio callback live — is verified by the
+    # `bridge` job above on a Linux runner, because it imports no Apple
+    # framework. What remains here is CoreAudio, AVFoundation, the keychain and
+    # SwiftUI: real, and a much smaller unverified surface than "the Apple
+    # layer".
     runs-on: macos-14
     if: false
     steps:

@@ -1,0 +1,11 @@
+// GENERATED FILE. Do not edit.
+//
+// Produced by `cargo run -p prv-ffi --bin bridgegen`, beside the header it
+// describes. Swift imports a C library through a Clang module, so without
+// this there is nothing for `import CPRVBridge` to find.
+
+module CPRVBridge {
+    header "PRVBridge.h"
+    link "prv_ffi"
+    export *
+}

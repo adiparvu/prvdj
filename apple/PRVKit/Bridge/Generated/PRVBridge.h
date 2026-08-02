@@ -42,6 +42,9 @@ typedef enum PrvStatus {
     PRV_BUFFER_TOO_SMALL = 5,
     PRV_REFUSED = 6,
     PRV_PANICKED = 7,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_STATUS_FORCE_SIGNED = -1,
 } PrvStatus;
 
 /* What the transport is doing. */
@@ -55,6 +58,9 @@ typedef enum PrvPlaybackState {
     PRV_PLAYBACK_BUFFERING = 6,
     PRV_PLAYBACK_RECOVERING = 7,
     PRV_PLAYBACK_ERROR = 8,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_PLAYBACK_FORCE_SIGNED = -1,
 } PrvPlaybackState;
 
 /* What can happen to the transport. */
@@ -74,6 +80,9 @@ typedef enum PrvTransportEvent {
     PRV_EVENT_DEVICE_RESTORED = 12,
     PRV_EVENT_FAULT = 13,
     PRV_EVENT_RESET = 14,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_EVENT_FORCE_SIGNED = -1,
 } PrvTransportEvent;
 
 /* An engine. Opaque: the host never sees inside it, which is what lets the
