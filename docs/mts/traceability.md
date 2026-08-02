@@ -216,6 +216,11 @@ did not have would be worse than no row at all.
 | A task never runs on an input that was not produced | MP#19, MP#25 | `prv-ai::Run::record` | `a_failure_skips_everything_downstream_of_it_transitively`, `a_failure_early_on_never_produces_a_confident_answer_late_on` | **Verified** |
 | The user is asked for agreements once, in advance | MP#26, MP#10 | `prv-ai::TaskPlan::missing_agreements` | `what_a_plan_needs_is_known_before_anything_runs`, `a_schedule_says_in_advance_whether_anything_leaves_the_device` | **Verified** |
 | A modest machine is not mistaken for a withheld permission | MP#8, MP#26 | `prv-ai::Device` | `a_modest_machine_falls_back_to_the_cloud_and_only_with_an_agreement` | **Verified** |
+| Non-critical work is suspended during live playback | MP#19 | `prv-ai::Activity`, `Urgency` | `during_a_performance_background_work_waits_rather_than_being_dropped`, `housekeeping_yields_to_a_performance_and_a_request_does_not` | **Verified** |
+| Suspended work is deferred, never dropped | MP#9, MP#19 | `prv-ai::Schedule::deferred` | `during_a_performance_background_work_waits_rather_than_being_dropped`, `the_deferred_set_is_closed_under_dependency` | **Verified** |
+| A step somebody is waiting for is never blocked by postponed work | MP#19 | `prv-ai::TaskPlan::schedule` | `nothing_a_requested_task_needs_is_ever_deferred` | **Verified** |
+| A request becomes exactly the work it needs | MP#19 | `prv-ai::plan_for` | `analysis_appears_only_when_something_is_unanalysed`, `a_composed_plan_always_schedules` | **Verified** |
+| Nothing to do is said, not simulated | MP#10, MP#13 | `prv-ai::plan_for` | `an_analysed_library_asked_to_analyse_itself_produces_nothing_to_do`, `a_request_about_a_set_that_is_empty_says_so` | **Verified** |
 | Cloud and UI | MP#24, MP#17 | — | — | Not started |
 
 ## On the specification corpus itself

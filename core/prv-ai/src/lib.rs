@@ -33,14 +33,14 @@
 //! # What running a plan looks like
 //!
 //! ```
-//! use prv_ai::{Capability, Consents, Device, Outcome, Run, Task, TaskId, TaskPlan};
+//! use prv_ai::{Activity, Capability, Consents, Device, Outcome, Run, Task, TaskId, TaskPlan};
 //!
 //! let mut plan = TaskPlan::new();
 //! plan.add(Task::new(TaskId::new(1), Capability::Analysis))?;
 //! plan.add(Task::new(TaskId::new(2), Capability::Planning).after(TaskId::new(1)))?;
 //!
 //! // Nothing has been agreed to, and the plan still runs — on the device.
-//! let schedule = plan.schedule(&Consents::none(), Device::capable())?;
+//! let schedule = plan.schedule(&Consents::none(), Device::capable(), Activity::Idle)?;
 //! assert!(!schedule.anything_leaves_the_device());
 //!
 //! let mut run = Run::new(schedule);
@@ -52,14 +52,16 @@
 //! ```
 
 pub mod agent;
+pub mod compose;
 pub mod intent;
 pub mod run;
 pub mod task;
 
 pub use agent::{AgentKind, Capability, Device, DeviceFeature};
+pub use compose::{plan_for, ComposeError, Situation};
 pub use intent::{Intent, IntentError};
 pub use run::{Failure, Outcome, Run};
-pub use task::{Schedule, Step, Task, TaskError, TaskId, TaskPlan};
+pub use task::{Activity, Schedule, Step, Task, TaskError, TaskId, TaskPlan, Urgency};
 
 /// Re-exported so a caller can build a plan without naming `prv-security`
 /// directly for the one type it needs.
@@ -124,7 +126,7 @@ mod tests {
         );
 
         let schedule = plan
-            .schedule(&consents, Device::capable())
+            .schedule(&consents, Device::capable(), Activity::Idle)
             .expect("a schedule");
         assert!(!schedule.anything_leaves_the_device());
         for step in schedule.steps() {
@@ -150,7 +152,7 @@ mod tests {
         }
 
         let schedule = a_plan_for(&a_request())
-            .schedule(&everything, Device::capable())
+            .schedule(&everything, Device::capable(), Activity::Idle)
             .expect("a schedule");
 
         for step in schedule.steps() {
@@ -170,7 +172,7 @@ mod tests {
         // The failure mode worth engineering against: not a visible error, but
         // a plausible wrong result built on a measurement that never arrived.
         let schedule = a_plan_for(&a_request())
-            .schedule(&Consents::none(), Device::capable())
+            .schedule(&Consents::none(), Device::capable(), Activity::Idle)
             .expect("a schedule");
         let mut run = Run::new(schedule);
 

@@ -276,7 +276,7 @@ mod tests {
 
     use super::*;
     use crate::agent::{Capability, Device};
-    use crate::task::{Task, TaskPlan};
+    use crate::task::{Activity, Task, TaskPlan};
     use prv_security::Consents;
 
     fn id(value: u64) -> TaskId {
@@ -297,7 +297,7 @@ mod tests {
         plan.add(Task::new(id(5), Capability::Delivery))
             .expect("add");
         Run::new(
-            plan.schedule(&Consents::none(), Device::capable())
+            plan.schedule(&Consents::none(), Device::capable(), Activity::Idle)
                 .expect("schedule"),
         )
     }
@@ -402,7 +402,7 @@ mod tests {
         )
         .expect("add");
         let mut run = Run::new(
-            plan.schedule(&Consents::none(), Device::capable())
+            plan.schedule(&Consents::none(), Device::capable(), Activity::Idle)
                 .expect("schedule"),
         );
 

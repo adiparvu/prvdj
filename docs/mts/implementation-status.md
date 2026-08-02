@@ -11,7 +11,7 @@ Code that is authored is never reported as working. This is a direct requirement
 of MP#13 (*no placeholder implementations*) and MP#27 (*no feature is complete
 without verification*).
 
-_Last updated: Sprint 20._
+_Last updated: Sprint 21._
 
 ## Sprint 0 — Foundation
 
@@ -236,6 +236,16 @@ _Last updated: Sprint 20._
 | `prv-ai` task graph | Completed | Verified | Deterministic order; a cycle is refused rather than broken |
 | Agreements known before anything runs | Completed | Verified | The user is asked once, up front, for exactly what is needed |
 | `prv-ai` run record | Completed | Verified | A failed step skips its dependents transitively, each naming its cause |
+
+## Sprint 21 — A request becomes work
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ai::plan_for` | Completed | Verified | The situation is a parameter, never a field; every composed plan schedules |
+| Empty answers are honest | Completed | Verified | An analysed library asked to analyse itself produces nothing, not a no-op |
+| A request about an empty set is refused | Completed | Verified | More useful than an empty answer, which reads as "nothing to say" |
+| Urgency, and its propagation | Completed | Verified | Anything a requested task needs is itself requested |
+| Live playback defers background work | Completed | Verified | Deferred, never dropped; the deferred set is closed under dependency |
 
 ## Not started
 
