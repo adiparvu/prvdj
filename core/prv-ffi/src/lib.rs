@@ -67,6 +67,7 @@
 //! | [`policy`] | May this leave the device, and is this feature available? |
 //! | [`collection`] | What music does the user have, and what did they search for? |
 //! | [`delivery`] | Is this master ready to go where it is going? |
+//! | [`experience`] | How does the application behave, and what may interrupt? |
 //! | [`exports`] | The functions themselves. |
 //!
 //! # The header is generated
@@ -90,6 +91,7 @@ pub mod analysis;
 pub mod collection;
 pub mod delivery;
 pub mod engine;
+pub mod experience;
 pub mod exports;
 mod guard;
 pub mod mapping;
@@ -101,6 +103,7 @@ pub use analysis::Analysis;
 pub use collection::Collection;
 pub use delivery::Delivery;
 pub use engine::{Engine, ReadAudio, MAX_BLOCK_FRAMES, MAX_CHANNELS};
+pub use experience::Experience;
 pub use planning::Planner;
 pub use policy::Policy;
 pub use status::Status;

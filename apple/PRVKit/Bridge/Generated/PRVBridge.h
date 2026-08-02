@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 5
+#define PRV_ABI_MINOR 6
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -178,6 +178,9 @@ typedef struct PrvCollection PrvCollection;
 /* What a master measures, and what a target would need of it. */
 typedef struct PrvDelivery PrvDelivery;
 
+/* How the application behaves, and what it has queued to say. */
+typedef struct PrvExperience PrvExperience;
+
 /*
  * Reads audio for one track.
  *
@@ -215,6 +218,45 @@ typedef enum PrvSortKey {
        int32_t every function here takes. Never returned, never compared. */
     PRV_SORT_FORCE_SIGNED = -1,
 } PrvSortKey;
+
+/* How much the application volunteers. */
+typedef enum PrvExperienceMode {
+    PRV_MODE_GUIDED = 0,
+    PRV_MODE_STANDARD = 1,
+    PRV_MODE_PROFESSIONAL = 2,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_MODE_FORCE_SIGNED = -1,
+} PrvExperienceMode;
+
+/* Where the user's attention is. Performing holds back anything that
+         * can wait. */
+typedef enum PrvAttention {
+    PRV_ATTENTION_AT_THE_DESK = 0,
+    PRV_ATTENTION_PERFORMING = 1,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_ATTENTION_FORCE_SIGNED = -1,
+} PrvAttention;
+
+/* What the application may want to tell the user. */
+typedef enum PrvNotice {
+    PRV_NOTICE_PLUGIN_BYPASSED = 0,
+    PRV_NOTICE_AUDIO_DEVICE_CHANGED = 1,
+    PRV_NOTICE_MEDIA_UNREADABLE = 2,
+    PRV_NOTICE_TRACK_ANALYSED = 3,
+    PRV_NOTICE_ANALYSIS_FAILED = 4,
+    PRV_NOTICE_PLAN_READY = 5,
+    PRV_NOTICE_EXPORT_FINISHED = 6,
+    PRV_NOTICE_EXPORT_BLOCKED = 7,
+    PRV_NOTICE_SYNC_CONFLICT = 8,
+    PRV_NOTICE_OUTBOX_FILLING = 9,
+    PRV_NOTICE_PERMISSION_REQUESTED = 10,
+    PRV_NOTICE_WORK_DEFERRED = 11,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_NOTICE_FORCE_SIGNED = -1,
+} PrvNotice;
 
 /* Where a master is going. */
 typedef enum PrvDeliveryTarget {
@@ -769,6 +811,84 @@ int32_t prv_delivery_verdict(const PrvDelivery *delivery, int32_t *out_complianc
  * Whether a person should look before exporting.
  */
 int32_t prv_delivery_needs_attention(const PrvDelivery *delivery, int32_t *out_needs);
+
+/*
+ * Creates an experience: standard mode, at the desk, nothing queued.
+ */
+int32_t prv_experience_create(PrvExperience **out_experience);
+
+/*
+ * Destroys an experience. NULL is accepted and does nothing.
+ */
+void prv_experience_destroy(PrvExperience *experience);
+
+/*
+ * Sets the experience mode.
+ */
+int32_t prv_experience_set_mode(PrvExperience *experience, int32_t mode);
+
+/*
+ * Reads the experience mode.
+ */
+int32_t prv_experience_mode(const PrvExperience *experience, int32_t *out_mode);
+
+/*
+ * Sets where the user's attention is.
+ *
+ * PRV_ATTENTION_PERFORMING is what stops anything that can wait from
+ * appearing over a set. A dialogue during a performance is worse than the
+ * problem it reports, almost always.
+ */
+int32_t prv_experience_set_attention(PrvExperience *experience, int32_t attention);
+
+/*
+ * Reads a boolean setting.
+ */
+int32_t prv_experience_flag(const PrvExperience *experience, int32_t setting,
+                            int32_t *out_value);
+
+/*
+ * Sets a boolean setting.
+ */
+int32_t prv_experience_set_flag(PrvExperience *experience, int32_t setting,
+                                int32_t value);
+
+/*
+ * Raises a notice, and says whether it will be shown now.
+ *
+ * Zero does not mean discarded. A notice raised while performing is held
+ * and comes back from prv_experience_release.
+ */
+int32_t prv_experience_raise(PrvExperience *experience, int32_t notice,
+                             int32_t *out_shown);
+
+/*
+ * Hands over everything held back during a performance.
+ */
+int32_t prv_experience_release(PrvExperience *experience, uint64_t *out_count);
+
+/*
+ * One released notice: which it was, and how many times it happened.
+ *
+ * The count matters. Six identical warnings during a set are one problem
+ * that happened six times, and six dialogues afterwards would be the
+ * notification doing more damage than the fault.
+ */
+int32_t prv_experience_released(const PrvExperience *experience, uint64_t index,
+                                int32_t *out_notice, uint32_t *out_occurrences);
+
+/*
+ * Whether anything is waiting to be shown.
+ */
+int32_t prv_experience_has_waiting(const PrvExperience *experience, int32_t *out_waiting);
+
+/*
+ * Whether a notice concerns the sound happening right now.
+ *
+ * The one class that may interrupt a performance: a performer not told the
+ * right deck is silent finds out from the room.
+ */
+int32_t prv_notice_concerns_the_sound(int32_t notice, int32_t *out_concerns);
 
 #ifdef __cplusplus
 }

@@ -178,6 +178,10 @@ did not have would be worse than no row at all.
 | A master is judged before it is exported | MP#3A, MP#3C | `prv-ffi::delivery` | `judging`, `everyCombinationIsDefined` | **Verified** |
 | A very quiet master is questioned, not amplified | MP#3C, MP#13 | `prv-ffi::Delivery::gain_db` | `veryQuietIsNotGained` | **Verified** |
 | Dither follows the depth, not the format | MP#3A | `prv-ffi::Delivery::needs_dither` | `ditherFollowsDepth`, `a_dither_decision_follows_the_depth_rather_than_the_format` | **Verified** |
+| A performance is not interrupted by what can wait | MP#8, MP#11 | `prv-ffi::experience` | `nothing_that_can_wait_interrupts_a_performance`, `performingHoldsBack` | **Verified** |
+| Nothing held back is lost | MP#8 | `prv_experience_release` | `what_was_held_back_comes_out_afterwards_rather_than_being_dropped` | **Verified** |
+| A repeated fault is one notice with a count | MP#8, MP#11 | `Pending::occurrences` | `six_of_the_same_fault_is_one_notice_that_happened_six_times`, `releaseAfterwards` | **Verified** |
+| A notice about the sound may still interrupt | MP#11 | `Notice::concerns_the_sound_right_now` | `a_notice_about_the_sound_right_now_may_still_interrupt` | **Verified** |
 | Sharing a project does not distribute audio | MP#15, MP#29 | ADR-0003 | — | **Decided** |
 | Plugins sandboxed; a crash never stops playback | MP#23 | ADR-0005 | — | **Decided** |
 | Stem separation on-device by default | MP#26, MP#29 | ADR-0004 | — | **Decided** |

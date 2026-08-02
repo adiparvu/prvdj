@@ -129,3 +129,73 @@ struct PolicyTests {
         }
     }
 }
+
+@Suite("How the application behaves")
+struct ExperienceTests {
+    /// A notice that can wait, found rather than hard-coded so the test does not
+    /// break when the core renumbers.
+    private func quietNotice() -> Int32? {
+        (0..<Experience.noticeCount).first { !Experience.concernsTheSound($0) }
+    }
+
+    @Test("nothing that can wait interrupts a performance")
+    func performingHoldsBack() throws {
+        let experience = try Experience()
+        let quiet = try #require(quietNotice())
+
+        try experience.setAttention(.performing)
+        #expect(try experience.raise(quiet) == false, "a notice appeared over a set")
+        #expect(experience.hasWaiting)
+    }
+
+    @Test("what was held comes out afterwards, counted rather than repeated")
+    func releaseAfterwards() throws {
+        // Six identical warnings during a set are one problem that happened six
+        // times. Six dialogues afterwards would be worse than the fault.
+        let experience = try Experience()
+        let quiet = try #require(quietNotice())
+
+        try experience.setAttention(.performing)
+        for _ in 0..<6 {
+            try experience.raise(quiet)
+        }
+
+        try experience.setAttention(.atTheDesk)
+        let released = try experience.release()
+        #expect(released.count == 1, "six dialogues instead of one")
+        #expect(released.first?.occurrences == 6, "the count was lost")
+    }
+
+    @Test("the mode round-trips")
+    func modeRoundTrips() throws {
+        let experience = try Experience()
+        for mode in ExperienceMode.allCases {
+            try experience.setMode(mode)
+            #expect(experience.mode == mode)
+        }
+    }
+
+    @Test("the boundary knows how many notices it has, so a host need not guess")
+    func noticeCountIsDiscoverable() {
+        // A host enumerating notices needs an upper bound, and hard-coding one
+        // in every host is how they drift apart.
+        #expect(Experience.noticeCount > 0)
+        #expect(!Experience.concernsTheSound(Experience.noticeCount), "past the end is not a notice")
+    }
+
+    @Test("some notices concern the sound and some can wait")
+    func bothKindsExist() {
+        // If every notice concerned the sound, holding back during a
+        // performance would never do anything and the test above would be
+        // vacuous.
+        let codes = (0..<Experience.noticeCount)
+        #expect(codes.contains { Experience.concernsTheSound($0) })
+        #expect(codes.contains { !Experience.concernsTheSound($0) })
+    }
+
+    @Test("releasing with nothing held is empty rather than an error")
+    func releasingNothing() throws {
+        let experience = try Experience()
+        #expect(try experience.release().isEmpty)
+    }
+}

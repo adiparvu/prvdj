@@ -495,6 +495,26 @@ oversight: it is almost always a mistake upstream — a muted lane, the wrong
 project — and twenty decibels of gain produces a loud version of the wrong
 thing.
 
+### Sprint 37 — how the application behaves
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::experience` | Completed | Verified | Settings and notifications together, because they are one decision |
+| A performance is not interrupted by what can wait | Completed | Verified | Held, not dropped; released with a count when the user is back at the desk |
+| `PRVCore.Experience` | Completed | **Verified on Linux** | And `noticeCount`, so a host never hard-codes the range |
+| ABI minor version 1.6 | Completed | Verified | Calls added, nothing existing moved |
+
+**The boundary now reaches every context the core decides in.** Musical time,
+transport, the project, the timeline, rendering, planning, analysis, the
+collection, consent, entitlement, delivery, settings and notifications: all
+callable from C, all wrapped in Swift, all tested on Linux on every commit.
+
+What is left out of the boundary is `prv-plugin`, `prv-sync`, `prv-learning` and
+`prv-telemetry` — four contexts whose hosts do not exist yet. A boundary for a
+plugin loader with no plugin host to load into would be a guess about a shape
+nobody has built against, and ADR-0005 is explicit that the isolation tier
+decides the interface. They are named here rather than quietly omitted.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

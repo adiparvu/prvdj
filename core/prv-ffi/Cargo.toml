@@ -27,9 +27,11 @@ prv-harmony = { path = "../prv-harmony" }
 prv-entitlements = { path = "../prv-entitlements" }
 prv-library = { path = "../prv-library" }
 prv-mix = { path = "../prv-mix" }
+prv-notify = { path = "../prv-notify" }
 prv-project = { path = "../prv-project" }
 prv-render = { path = "../prv-render" }
 prv-security = { path = "../prv-security" }
+prv-settings = { path = "../prv-settings" }
 prv-rt = { path = "../prv-rt" }
 prv-time = { path = "../prv-time" }
 prv-timeline = { path = "../prv-timeline" }

@@ -20,6 +20,7 @@ use crate::analysis::Analysis;
 use crate::collection::Collection;
 use crate::delivery::Delivery;
 use crate::engine::{Engine, ReadAudio};
+use crate::experience::Experience;
 use crate::guard::{as_mut, as_ref, guarded_try};
 use crate::mapping::event_from_code;
 use crate::planning::Planner;
@@ -1601,6 +1602,254 @@ pub unsafe extern "C" fn prv_delivery_needs_attention(
         let needs = unsafe { as_ref(delivery) }?.needs_attention();
         // SAFETY: as above.
         *unsafe { as_mut(out_needs) }? = i32::from(needs);
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Experience
+//
+// Settings and notifications together, because they are one decision: whether a
+// notice is shown depends on the mode, and a host reading them separately would
+// have to reimplement that rule.
+// ---------------------------------------------------------------------------
+
+/// Creates an experience: standard mode, at the desk, nothing queued.
+///
+/// # Safety
+///
+/// `out_experience` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_create(out_experience: *mut *mut Experience) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_experience) }?;
+        *slot = core::ptr::null_mut();
+        *slot = Box::into_raw(Box::new(Experience::new()));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys an experience. Null is accepted and does nothing.
+///
+/// # Safety
+///
+/// `experience` must come from [`prv_experience_create`] and not yet be
+/// destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_destroy(experience: *mut Experience) {
+    if experience.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(experience) });
+        Status::Ok
+    });
+}
+
+/// Sets the experience mode.
+///
+/// # Safety
+///
+/// `experience` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_set_mode(experience: *mut Experience, mode: i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(experience) }?.set_mode(mode)
+    })
+    .code()
+}
+
+/// Reads the experience mode.
+///
+/// # Safety
+///
+/// `experience` must be live and `out_mode` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_mode(
+    experience: *const Experience,
+    out_mode: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let mode = unsafe { as_ref(experience) }?.mode();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_mode) }? = mode;
+        Ok(())
+    })
+    .code()
+}
+
+/// Sets where the user's attention is.
+///
+/// Setting this to `PRV_ATTENTION_PERFORMING` is what stops anything that can
+/// wait from appearing over a set.
+///
+/// # Safety
+///
+/// `experience` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_set_attention(
+    experience: *mut Experience,
+    attention: i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(experience) }?.set_attention(attention)
+    })
+    .code()
+}
+
+/// Reads a boolean setting.
+///
+/// # Safety
+///
+/// `experience` must be live and `out_value` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_flag(
+    experience: *const Experience,
+    setting: i32,
+    out_value: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let value = unsafe { as_ref(experience) }?.flag(setting)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_value) }? = i32::from(value);
+        Ok(())
+    })
+    .code()
+}
+
+/// Sets a boolean setting.
+///
+/// # Safety
+///
+/// `experience` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_set_flag(
+    experience: *mut Experience,
+    setting: i32,
+    value: i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(experience) }?.set_flag(setting, value != 0)
+    })
+    .code()
+}
+
+/// Raises a notice, and says whether it will be shown now.
+///
+/// Zero does not mean discarded. A notice raised while performing is held and
+/// comes back from [`prv_experience_release`].
+///
+/// # Safety
+///
+/// `experience` must be live and `out_shown` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_raise(
+    experience: *mut Experience,
+    notice: i32,
+    out_shown: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let shown = unsafe { as_mut(experience) }?.raise(notice)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_shown) }? = i32::from(shown);
+        Ok(())
+    })
+    .code()
+}
+
+/// Hands over everything held back during a performance.
+///
+/// # Safety
+///
+/// `experience` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_release(
+    experience: *mut Experience,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let count = unsafe { as_mut(experience) }?.release();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = count;
+        Ok(())
+    })
+    .code()
+}
+
+/// One released notice: which it was, and how many times it happened.
+///
+/// The count matters. Six identical warnings during a set are one problem that
+/// happened six times, and six dialogues afterwards would be the notification
+/// doing more damage than the fault.
+///
+/// # Safety
+///
+/// `experience` must be live and both out-parameters writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_released(
+    experience: *const Experience,
+    index: u64,
+    out_notice: *mut i32,
+    out_occurrences: *mut u32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let (notice, occurrences) = unsafe { as_ref(experience) }?.released(index)?;
+        // SAFETY: as above.
+        unsafe {
+            *as_mut(out_notice)? = notice;
+            *as_mut(out_occurrences)? = occurrences;
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether anything is waiting to be shown.
+///
+/// # Safety
+///
+/// `experience` must be live and `out_waiting` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_experience_has_waiting(
+    experience: *const Experience,
+    out_waiting: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let waiting = unsafe { as_ref(experience) }?.has_waiting();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_waiting) }? = i32::from(waiting);
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether a notice concerns the sound happening right now.
+///
+/// The one class that may interrupt a performance: a performer not told the
+/// right deck is silent finds out from the room.
+///
+/// # Safety
+///
+/// `out_concerns` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_notice_concerns_the_sound(notice: i32, out_concerns: *mut i32) -> i32 {
+    guarded_try(|| {
+        let concerns = Experience::concerns_the_sound(notice)?;
+        // SAFETY: the caller's documented contract.
+        *unsafe { as_mut(out_concerns) }? = i32::from(concerns);
         Ok(())
     })
     .code()

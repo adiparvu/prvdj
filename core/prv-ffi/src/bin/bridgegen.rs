@@ -46,6 +46,7 @@ use std::process::ExitCode;
 
 use prv_ffi::collection::{SORT_KEYS, TEXT_FIELDS};
 use prv_ffi::delivery::{COMPLIANCE, DEPTHS, FORMATS, TARGETS};
+use prv_ffi::experience::{notice_code, ATTENTION, MODES};
 use prv_ffi::mapping::{PLAYBACK_STATES, TRANSPORT_EVENTS};
 use prv_ffi::planning::{CREATIVITY_SETTINGS, ENERGY_SHAPES};
 use prv_ffi::policy::{purpose_code, tier_code};
@@ -265,6 +266,30 @@ fn declarations() -> Vec<Declaration> {
     ) -> i32 = prv_ffi::exports::prv_delivery_verdict;
     let _: unsafe extern "C" fn(*const prv_ffi::Delivery, *mut i32) -> i32 =
         prv_ffi::exports::prv_delivery_needs_attention;
+    let _: unsafe extern "C" fn(*mut *mut prv_ffi::Experience) -> i32 =
+        prv_ffi::exports::prv_experience_create;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience) =
+        prv_ffi::exports::prv_experience_destroy;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience, i32) -> i32 =
+        prv_ffi::exports::prv_experience_set_mode;
+    let _: unsafe extern "C" fn(*const prv_ffi::Experience, *mut i32) -> i32 =
+        prv_ffi::exports::prv_experience_mode;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience, i32) -> i32 =
+        prv_ffi::exports::prv_experience_set_attention;
+    let _: unsafe extern "C" fn(*const prv_ffi::Experience, i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_experience_flag;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience, i32, i32) -> i32 =
+        prv_ffi::exports::prv_experience_set_flag;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience, i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_experience_raise;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Experience, *mut u64) -> i32 =
+        prv_ffi::exports::prv_experience_release;
+    let _: unsafe extern "C" fn(*const prv_ffi::Experience, u64, *mut i32, *mut u32) -> i32 =
+        prv_ffi::exports::prv_experience_released;
+    let _: unsafe extern "C" fn(*const prv_ffi::Experience, *mut i32) -> i32 =
+        prv_ffi::exports::prv_experience_has_waiting;
+    let _: unsafe extern "C" fn(i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_notice_concerns_the_sound;
 
     vec![
         Declaration {
@@ -783,6 +808,85 @@ fn declarations() -> Vec<Declaration> {
                         int32_t *out_needs)",
             doc: &["Whether a person should look before exporting."],
         },
+        Declaration {
+            signature: "int32_t prv_experience_create(PrvExperience **out_experience)",
+            doc: &["Creates an experience: standard mode, at the desk, nothing queued."],
+        },
+        Declaration {
+            signature: "void prv_experience_destroy(PrvExperience *experience)",
+            doc: &["Destroys an experience. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_set_mode(PrvExperience *experience, int32_t mode)",
+            doc: &["Sets the experience mode."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_mode(const PrvExperience *experience, \
+                        int32_t *out_mode)",
+            doc: &["Reads the experience mode."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_set_attention(PrvExperience *experience, \
+                        int32_t attention)",
+            doc: &[
+                "Sets where the user's attention is.",
+                "",
+                "PRV_ATTENTION_PERFORMING is what stops anything that can wait from",
+                "appearing over a set. A dialogue during a performance is worse than the",
+                "problem it reports, almost always.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_flag(const PrvExperience *experience, \
+                        int32_t setting, int32_t *out_value)",
+            doc: &["Reads a boolean setting."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_set_flag(PrvExperience *experience, \
+                        int32_t setting, int32_t value)",
+            doc: &["Sets a boolean setting."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_raise(PrvExperience *experience, int32_t notice, \
+                        int32_t *out_shown)",
+            doc: &[
+                "Raises a notice, and says whether it will be shown now.",
+                "",
+                "Zero does not mean discarded. A notice raised while performing is held",
+                "and comes back from prv_experience_release.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_release(PrvExperience *experience, \
+                        uint64_t *out_count)",
+            doc: &["Hands over everything held back during a performance."],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_released(const PrvExperience *experience, \
+                        uint64_t index, int32_t *out_notice, uint32_t *out_occurrences)",
+            doc: &[
+                "One released notice: which it was, and how many times it happened.",
+                "",
+                "The count matters. Six identical warnings during a set are one problem",
+                "that happened six times, and six dialogues afterwards would be the",
+                "notification doing more damage than the fault.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_experience_has_waiting(const PrvExperience *experience, \
+                        int32_t *out_waiting)",
+            doc: &["Whether anything is waiting to be shown."],
+        },
+        Declaration {
+            signature: "int32_t prv_notice_concerns_the_sound(int32_t notice, \
+                        int32_t *out_concerns)",
+            doc: &[
+                "Whether a notice concerns the sound happening right now.",
+                "",
+                "The one class that may interrupt a performance: a performer not told the",
+                "right deck is silent finds out from the room.",
+            ],
+        },
     ]
 }
 
@@ -922,6 +1026,52 @@ fn emit_types(out: &mut String) {
             .iter()
             .enumerate()
             .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_experience_enums(out);
+}
+
+/// Emits the enums that describe how the application behaves and what it
+/// delivers, rather than what the music is.
+///
+/// The third split, along the same line as the first two: a reader looking for
+/// how a notice is numbered is not made to scroll through key signatures.
+fn emit_experience_enums(out: &mut String) {
+    emit_enum(
+        out,
+        "/* How much the application volunteers. */",
+        "PrvExperienceMode",
+        "PRV_MODE_FORCE_SIGNED",
+        MODES
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
+    );
+
+    emit_enum(
+        out,
+        "/* Where the user's attention is. Performing holds back anything that\n         * can wait. */",
+        "PrvAttention",
+        "PRV_ATTENTION_FORCE_SIGNED",
+        ATTENTION.iter().enumerate().map(|(index, (_, name))| {
+            ((*name).to_owned(), i32::try_from(index).unwrap_or(0))
+        }),
+    );
+
+    emit_enum(
+        out,
+        "/* What the application may want to tell the user. */",
+        "PrvNotice",
+        "PRV_NOTICE_FORCE_SIGNED",
+        prv_notify::Notice::ALL.iter().map(|notice| {
+            (
+                format!(
+                    "PRV_NOTICE_{}",
+                    notice.key().trim_start_matches("notice.").to_uppercase()
+                ),
+                notice_code(*notice),
+            )
+        }),
     );
 
     emit_enum(
@@ -1075,6 +1225,9 @@ typedef struct PrvCollection PrvCollection;
 
 /* What a master measures, and what a target would need of it. */
 typedef struct PrvDelivery PrvDelivery;
+
+/* How the application behaves, and what it has queued to say. */
+typedef struct PrvExperience PrvExperience;
 
 ",
     );
