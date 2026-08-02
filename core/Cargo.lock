@@ -185,6 +185,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "prv-ffi"
+version = "0.1.0"
+dependencies = [
+ "prv-project",
+ "prv-render",
+ "prv-rt",
+ "prv-time",
+ "prv-timeline",
+ "prv-transport",
+]
+
+[[package]]
 name = "prv-harmony"
 version = "0.1.0"
 

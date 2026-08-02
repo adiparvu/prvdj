@@ -29,6 +29,24 @@ core_sources() {
     find core -path core/target -prune -o -name '*.rs' -print 2>/dev/null | sort
 }
 
+# The subset of the core that is actually linked into a shipping binary.
+#
+# Excludes `tests/`, `benches/`, `examples/` and `src/bin/`, none of which cargo
+# links into a library. The distinction matters for Rule 1 and nowhere else: a
+# test harness that spawns a compiler, or a code generator that writes a header,
+# is not the core reaching for the filesystem — it is the build doing its job.
+# Every other rule below still scans everything, because a placeholder marker or
+# an undocumented crate is just as wrong in a test.
+core_library_sources() {
+    find core \
+        -path core/target -prune -o \
+        -path '*/tests/*' -prune -o \
+        -path '*/benches/*' -prune -o \
+        -path '*/examples/*' -prune -o \
+        -path '*/src/bin/*' -prune -o \
+        -name '*.rs' -print 2>/dev/null | sort
+}
+
 printf 'Architecture rules\n\n'
 
 # ---------------------------------------------------------------------------
@@ -41,7 +59,7 @@ printf 'Architecture rules\n\n'
 # ---------------------------------------------------------------------------
 io_hits=""
 for forbidden in 'std::fs' 'std::net' 'std::process' 'std::env'; do
-    hits="$(core_sources | xargs -r grep -l -- "$forbidden" || true)"
+    hits="$(core_library_sources | xargs -r grep -l -- "$forbidden" || true)"
     if [ -n "$hits" ]; then
         io_hits="${io_hits}${forbidden}: ${hits}\n"
     fi
@@ -50,15 +68,25 @@ if [ -n "$io_hits" ]; then
     fail "the core must perform no I/O (ADR-0001); found:"
     printf '%b' "$io_hits" >&2
 else
-    pass "core performs no filesystem, network, process or environment access"
+    pass "shipping core performs no filesystem, network, process or environment access"
 fi
 
 # ---------------------------------------------------------------------------
-# Rule 2 — unsafe code is confined to one audited crate.
+# Rule 2 — unsafe code is confined to audited crates.
 #
 # ADR-0002's guarantees rest on a small, reviewed set of wait-free structures.
-# Unsafe code spreading beyond `prv-rt` would make that set impossible to audit,
-# which is exactly the failure mode the confinement exists to prevent.
+# Unsafe code spreading beyond those crates would make the set impossible to
+# audit, which is exactly the failure mode the confinement exists to prevent.
+#
+# Two crates are excepted, and both exceptions are the same shape: a place where
+# Rust's guarantees genuinely end and the reasoning has to be done by hand.
+#
+#   prv-rt   the wait-free structures ADR-0002 rests on.
+#   prv-ffi  the C boundary. A host hands over a pointer and a promise, and
+#            there is no mechanism anywhere that can check the promise.
+#
+# The list is short on purpose. Adding to it is a decision, not a convenience,
+# and it belongs in a pull request that says why.
 #
 # Comments are stripped before matching. The rule is about code, and a scanner
 # that also matched prose would make documenting *why* a module avoids unsafe
@@ -68,16 +96,17 @@ unsafe_hits=""
 while IFS= read -r source; do
     case "$source" in
         core/prv-rt/*) continue ;;
+        core/prv-ffi/*) continue ;;
     esac
     if sed 's://.*::' "$source" | grep -q -E '\bunsafe\b'; then
         unsafe_hits="${unsafe_hits}${source}\n"
     fi
 done < <(core_sources)
 if [ -n "$unsafe_hits" ]; then
-    fail "unsafe code is permitted only in prv-rt (ADR-0002); found in:"
+    fail "unsafe code is permitted only in prv-rt and prv-ffi (ADR-0002); found in:"
     printf '%b' "$unsafe_hits" >&2
 else
-    pass "unsafe code confined to prv-rt"
+    pass "unsafe code confined to prv-rt and prv-ffi"
 fi
 
 # ---------------------------------------------------------------------------
@@ -247,6 +276,31 @@ else
 fi
 
 printf '\n'
+# ---------------------------------------------------------------------------
+# Rule 9 — the generated bindings match the boundary that generated them.
+#
+# The architecture overview requires bindings to be generated rather than
+# hand-written, "because hand-written bindings drift". A drifting binding is a
+# nastier defect than a broken one: it compiles, it links, it runs, and it
+# computes the wrong answer. A header that still calls `PRV_PLAYBACK_PAUSED` 4
+# after the library moved it to 5 shows the wrong thing on stage.
+#
+# The generator is the authority. This rule asserts the committed copy is what it
+# produces today.
+# ---------------------------------------------------------------------------
+bridge_header="apple/PRVKit/Bridge/Generated/PRVBridge.h"
+if [ ! -f "$bridge_header" ]; then
+    fail "the generated C header is missing: $bridge_header"
+elif ! command -v cargo >/dev/null 2>&1; then
+    # A tree without a Rust toolchain can still be checked for everything else.
+    # Saying so is better than a silent pass.
+    pass "generated bindings not checked (no cargo on this machine)"
+elif (cd core && cargo run -q -p prv-ffi --bin bridgegen -- --check "../$bridge_header" >/dev/null 2>&1); then
+    pass "generated bindings match the boundary"
+else
+    fail "$bridge_header has drifted from prv-ffi; run: cd core && cargo run -p prv-ffi --bin bridgegen -- ../$bridge_header"
+fi
+
 if [ "$failures" -gt 0 ]; then
     printf '%d architecture rule(s) violated.\n' "$failures" >&2
     exit 1

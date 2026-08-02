@@ -1,0 +1,26 @@
+[package]
+name = "prv-ffi"
+description = "The C ABI boundary: the portable core, callable from any host language."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+# `staticlib` is what the Apple targets link. `cdylib` is what the C harness in
+# `tests/` loads, and what a non-Apple host would use. `rlib` is what the crate's
+# own tests link against.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+prv-project = { path = "../prv-project" }
+prv-render = { path = "../prv-render" }
+prv-rt = { path = "../prv-rt" }
+prv-time = { path = "../prv-time" }
+prv-timeline = { path = "../prv-timeline" }
+prv-transport = { path = "../prv-transport" }
+
+[lints]
+workspace = true

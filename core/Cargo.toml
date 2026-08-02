@@ -23,6 +23,7 @@ members = [
     "prv-sync",
     "prv-notify",
     "prv-render",
+    "prv-ffi",
 ]
 
 [workspace.package]

@@ -1,0 +1,327 @@
+//! Compiles a C program against the generated header and runs it.
+//!
+//! # Why a Rust test that calls a C compiler
+//!
+//! Every other test in this crate calls the exported functions from Rust, which
+//! proves the logic and proves nothing about the boundary. Rust calling a Rust
+//! `extern "C"` function does not exercise the header, does not exercise the
+//! linker, and would keep passing if the header said `int32_t` where the library
+//! meant `int64_t`.
+//!
+//! This test is the one that would catch that. It writes a C host, compiles it
+//! against `PRVBridge.h` as generated and committed, links it against the real
+//! static library, runs it, and requires it to exit zero.
+//!
+//! # What it does not cover
+//!
+//! The Apple platform's own linker and calling convention. This runs on whatever
+//! host builds the repository, which today is Linux on x86-64. A mismatch that
+//! only appears on arm64-apple-darwin would not be caught here — but a mismatch
+//! that appears anywhere is caught somewhere, which is the difference between a
+//! boundary that has been tested and one that has been read.
+//!
+//! # Skipped rather than failed when there is no compiler
+//!
+//! A contributor without `cc` on their path should not see a red test they
+//! cannot act on. Continuous integration has one, so the coverage is real where
+//! it counts.
+
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::print_stdout,
+    reason = "a test that cannot build its own fixture should fail loudly, and \
+              this one reports what it skipped"
+)]
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// The C host. Written here rather than in a `.c` file so that what is compiled
+/// and what is read are the same text.
+const PROGRAM: &str = r#"
+#include <stdio.h>
+#include <string.h>
+#include "PRVBridge.h"
+
+static int failures = 0;
+
+#define CHECK(condition, message)                                              \
+    do {                                                                       \
+        if (!(condition)) {                                                    \
+            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, message);  \
+            failures += 1;                                                     \
+        }                                                                      \
+    } while (0)
+
+/* A host-side decoder, in the shape a real one has: it owns its memory and
+ * hands the core a view of it without allocating. */
+typedef struct {
+    float value;
+    uint32_t available;
+    uint32_t calls;
+} FakeDecoder;
+
+static uint32_t read_audio(void *user_data,
+                           uint64_t track,
+                           int64_t source_offset,
+                           float *planar,
+                           uint32_t channels,
+                           uint32_t capacity,
+                           uint32_t destination,
+                           uint32_t frames) {
+    FakeDecoder *decoder = (FakeDecoder *)user_data;
+    uint32_t wanted = frames < decoder->available ? frames : decoder->available;
+    (void)track;
+    (void)source_offset;
+
+    decoder->calls += 1;
+    for (uint32_t channel = 0; channel < channels; channel += 1) {
+        for (uint32_t frame = 0; frame < wanted; frame += 1) {
+            planar[channel * capacity + destination + frame] = decoder->value;
+        }
+    }
+    return wanted;
+}
+
+int main(void) {
+    /* Rule one: ask the version before anything else. */
+    uint32_t version = prv_abi_version();
+    CHECK(version != 0, "the library reported no version at all");
+    CHECK((version >> 16) == PRV_ABI_MAJOR,
+          "the library and this header disagree about the major version");
+    CHECK(prv_abi_is_compatible(PRV_ABI_MAJOR) != 0,
+          "the library rejected the version its own header describes");
+    CHECK(prv_abi_is_compatible(PRV_ABI_MAJOR + 1) == 0,
+          "the library accepted a major version it cannot serve");
+
+    /* A status message is always readable. */
+    const char *message = prv_status_message(PRV_INVALID_STATE);
+    CHECK(message != NULL, "a status had no message");
+    CHECK(strlen(message) > 0, "a status message was empty");
+
+    /* Make an engine. */
+    PrvEngine *engine = NULL;
+    int32_t status = prv_engine_create(48000, 2, 512, &engine);
+    CHECK(status == PRV_OK, "the engine would not start");
+    CHECK(engine != NULL, "a successful create returned no handle");
+
+    /* A failed create must leave a null handle rather than a stale one. */
+    PrvEngine *doomed = (PrvEngine *)0x1234;
+    status = prv_engine_create(0, 2, 512, &doomed);
+    CHECK(status == PRV_INVALID_ARGUMENT, "an impossible rate was accepted");
+    CHECK(doomed == NULL, "a failed create left a dangling pointer");
+
+    /* Register the decoder and place a track. */
+    FakeDecoder decoder = {0.25f, 8192, 0};
+    status = prv_engine_set_source(engine, read_audio, &decoder);
+    CHECK(status == PRV_OK, "the source would not attach");
+
+    uint64_t placement = 0;
+    status = prv_engine_place_track(engine, 42, 0, 4096, 0, 0, 1000, &placement);
+    CHECK(status == PRV_OK, "the track would not place");
+    CHECK(placement != 0, "a placement identity of zero is not a name");
+
+    int64_t duration = 0;
+    status = prv_engine_duration(engine, &duration);
+    CHECK(status == PRV_OK, "the duration could not be read");
+    CHECK(duration == 4096, "the project is not as long as the track placed in it");
+
+    uint64_t count = 0;
+    status = prv_engine_placement_count(engine, &count);
+    CHECK(status == PRV_OK, "the placement count could not be read");
+    CHECK(count == 1, "the project does not hold the one placement it was given");
+
+    /* Playing an empty deck is refused, and saying so is the point. */
+    status = prv_engine_transport(engine, PRV_EVENT_PLAY);
+    CHECK(status == PRV_INVALID_STATE, "play on an unloaded deck was accepted");
+
+    /* Load, ready, play. */
+    CHECK(prv_engine_transport(engine, PRV_EVENT_LOAD) == PRV_OK, "load refused");
+    CHECK(prv_engine_transport(engine, PRV_EVENT_LOAD_SUCCEEDED) == PRV_OK,
+          "load-succeeded refused");
+    CHECK(prv_engine_transport(engine, PRV_EVENT_PLAY) == PRV_OK, "play refused");
+
+    int32_t state = -1;
+    status = prv_engine_playback_state(engine, &state);
+    CHECK(status == PRV_OK, "the playback state could not be read");
+    CHECK(state == PRV_PLAYBACK_PLAYING, "the transport is not playing");
+
+    /* Render, which is the only call the audio thread makes. */
+    float block[2 * 256];
+    memset(block, 0, sizeof block);
+    status = prv_engine_render(engine, block, 2, 256);
+    CHECK(status == PRV_OK, "the render failed");
+    CHECK(decoder.calls > 0, "the renderer never asked the host for audio");
+
+    int heard = 0;
+    for (size_t index = 0; index < sizeof block / sizeof block[0]; index += 1) {
+        if (block[index] != 0.0f) {
+            heard = 1;
+            break;
+        }
+    }
+    CHECK(heard, "the block came back silent");
+
+    int32_t complete = 0;
+    status = prv_engine_render_was_complete(engine, &complete);
+    CHECK(status == PRV_OK, "completeness could not be read");
+    CHECK(complete == 1, "a fully-read placement reported as incomplete");
+
+    /* The playhead moved by exactly one block. */
+    int64_t position = -1;
+    status = prv_engine_position(engine, &position);
+    CHECK(status == PRV_OK, "the position could not be read");
+    CHECK(position == 256, "the playhead did not advance by one block");
+
+    /* Seeking puts it where it was asked. */
+    CHECK(prv_engine_seek(engine, 1024) == PRV_OK, "the seek failed");
+    status = prv_engine_position(engine, &position);
+    CHECK(status == PRV_OK, "the position could not be read after seeking");
+    CHECK(position == 1024, "the playhead is not where it was sent");
+
+    /* A block bigger than the engine was built for is refused, not truncated. */
+    status = prv_engine_render(engine, block, 2, 1024);
+    CHECK(status == PRV_INVALID_ARGUMENT, "an oversized block was accepted");
+
+    /* Null is refused rather than dereferenced. */
+    CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
+          "a null handle was dereferenced");
+    CHECK(prv_engine_position(engine, NULL) == PRV_NULL_POINTER,
+          "a null out-parameter was written through");
+
+    /* An event this version does not define is refused, not guessed. */
+    CHECK(prv_engine_transport(engine, 9999) == PRV_INVALID_ARGUMENT,
+          "an undefined transport event was applied");
+
+    prv_engine_destroy(engine);
+    prv_engine_destroy(NULL);
+
+    if (failures == 0) {
+        printf("the C host drove the boundary end to end\n");
+    }
+    return failures == 0 ? 0 : 1;
+}
+"#;
+
+/// The directory `cargo` puts build output in, found by walking up from the test
+/// binary. `CARGO_TARGET_DIR` is not exported to tests, so it is derived.
+fn target_dir() -> Option<PathBuf> {
+    let mut path = std::env::current_exe().ok()?;
+    // .../target/debug/deps/c_host-<hash>
+    path.pop();
+    path.pop();
+    Some(path)
+}
+
+/// Finds the static library cargo built for this crate.
+fn static_library(target: &Path) -> Option<PathBuf> {
+    // Only one name today. Kept as a lookup rather than inlined because the
+    // Windows spelling is `prv_ffi.lib`, and the day that matters this becomes a
+    // list rather than a rewrite.
+    let candidate = target.join("libprv_ffi.a");
+    candidate.exists().then_some(candidate)
+}
+
+#[test]
+fn a_c_host_can_drive_the_boundary_through_the_generated_header() {
+    let Ok(compiler_check) = Command::new("cc").arg("--version").output() else {
+        println!("skipped: no C compiler on this machine");
+        return;
+    };
+    if !compiler_check.status.success() {
+        println!("skipped: the C compiler on this machine does not run");
+        return;
+    }
+
+    let Some(target) = target_dir() else {
+        println!("skipped: the build directory could not be located");
+        return;
+    };
+    let Some(library) = static_library(&target) else {
+        // The staticlib is produced by `cargo build`, and `cargo test` builds it
+        // too — but only once the crate type has been compiled at least once in
+        // this profile. Skipping is honest; failing would be a test that reports
+        // on cargo's scheduling rather than on the boundary.
+        println!(
+            "skipped: {} has not been built yet; run `cargo build -p prv-ffi` first",
+            target.display()
+        );
+        return;
+    };
+
+    let scratch = target.join("c_host_test");
+    std::fs::create_dir_all(&scratch).expect("the scratch directory could not be made");
+    let source = scratch.join("host.c");
+    std::fs::write(&source, PROGRAM).expect("the C host could not be written");
+
+    let header_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apple/PRVKit/Bridge/Generated")
+        .canonicalize()
+        .expect("the generated header directory is missing; run bridgegen");
+
+    let binary = scratch.join("host");
+    let compile = Command::new("cc")
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        // A warning at this boundary is a type mismatch between the header and
+        // the library, which is the whole thing this test exists to find.
+        .arg("-Werror")
+        .arg("-I")
+        .arg(&header_dir)
+        .arg(&source)
+        .arg(&library)
+        .arg("-o")
+        .arg(&binary)
+        // The static library needs the platform's threading and maths symbols.
+        .args(["-lpthread", "-ldl", "-lm"])
+        .output()
+        .expect("the C compiler could not be run");
+
+    assert!(
+        compile.status.success(),
+        "the C host did not compile against the generated header:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&binary)
+        .output()
+        .expect("the compiled C host could not be run");
+
+    assert!(
+        run.status.success(),
+        "the C host failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+#[test]
+fn the_committed_header_is_what_the_generator_produces() {
+    // The drift gate, as a test as well as a continuous-integration step. A
+    // header that has fallen behind the library is the defect this whole
+    // generated-bindings arrangement exists to prevent, and finding it in
+    // `cargo test` is faster than finding it in a pull request.
+    let header = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apple/PRVKit/Bridge/Generated/PRVBridge.h");
+
+    let committed =
+        std::fs::read_to_string(&header).expect("the generated header is missing; run bridgegen");
+
+    // The version the header claims must be the version the library reports.
+    let expected = format!("#define PRV_ABI_MAJOR {}", prv_ffi::abi::MAJOR);
+    assert!(
+        committed.contains(&expected),
+        "the committed header does not describe this library's major version"
+    );
+
+    for status in prv_ffi::Status::ALL {
+        let line = format!("{} = {},", status.c_name(), status.code());
+        assert!(
+            committed.contains(&line),
+            "the committed header is missing or disagrees about `{line}`"
+        );
+    }
+}
