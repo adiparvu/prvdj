@@ -92,6 +92,58 @@ struct SyncTests {
         #expect(try studio.duration() == laptop.duration())
     }
 
+    /// A message from a build that does not exist yet, carrying one operation
+    /// this one cannot read. Built by hand, because the encoder cannot make it.
+    private func aMessageFromTheFuture(author: UInt64, sequence: UInt64) -> [UInt8] {
+        var entry: [UInt8] = []
+        entry.append(contentsOf: withUnsafeBytes(of: author.littleEndian, Array.init))
+        entry.append(contentsOf: withUnsafeBytes(of: sequence.littleEndian, Array.init))
+        entry.append(contentsOf: withUnsafeBytes(of: Int64(0).littleEndian, Array.init))
+        entry.append(contentsOf: withUnsafeBytes(of: UInt32(0).littleEndian, Array.init))
+        entry.append(contentsOf: withUnsafeBytes(of: UInt16(60_000).littleEndian, Array.init))
+        entry.append(contentsOf: withUnsafeBytes(of: UInt32(4).littleEndian, Array.init))
+        entry.append(contentsOf: Array("soon".utf8))
+
+        var message: [UInt8] = Array("PRVL".utf8)
+        message.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian, Array.init))
+        message.append(contentsOf: withUnsafeBytes(of: UInt16(0).littleEndian, Array.init))
+        message.append(contentsOf: withUnsafeBytes(of: UInt32(4).littleEndian, Array.init))
+        message.append(contentsOf: withUnsafeBytes(of: UInt32(1).littleEndian, Array.init))
+        message.append(
+            contentsOf: withUnsafeBytes(of: UInt32(entry.count).littleEndian, Array.init))
+        message.append(contentsOf: entry)
+        return message
+    }
+
+    @Test("an install a version behind carries work to the one that can read it")
+    func aStaleInstallIsARelay() throws {
+        let relay = try project(device: 2)
+        let report = try relay.merge(aMessageFromTheFuture(author: 3, sequence: 1))
+
+        #expect(report.applied == 0)
+        #expect(report.carried == 1)
+        #expect(report.needsANewerVersion)
+        #expect(try relay.carriedCount() == 1)
+
+        let onward = try Engine(sampleRate: 48_000, channels: 2, maxBlockFrames: 512)
+        try onward.setDevice(4)
+        let arrived = try onward.merge(relay.syncMessage(for: onward.syncState()))
+
+        // The relay's own edit and the one it cannot read, in the same message.
+        #expect(arrived.applied == 1)
+        #expect(arrived.carried == 1)
+        #expect(try onward.carriedCount() == 1)
+    }
+
+    @Test("work still beyond this build survives an attempt to promote it")
+    func promotingIsSafeToRepeat() throws {
+        let relay = try project(device: 2)
+        try relay.merge(aMessageFromTheFuture(author: 3, sequence: 1))
+
+        #expect(try relay.promoteCarried() == 0)
+        #expect(try relay.carriedCount() == 1)
+    }
+
     @Test("bytes that are not a message are refused rather than guessed at")
     func rubbishIsRefused() throws {
         let engine = try project(device: 1)

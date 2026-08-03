@@ -607,21 +607,57 @@ a population — and it fails the way the old scheme failed rather than a new wa
 
 ### What synchronisation still does not do
 
-**Store-and-forward of unreadable operations.** A message carrying operations
-from a newer build can be passed on byte for byte. What is not built is holding
-them: they are not written into the log, so a device that merges a message and
-later derives a new one from its own log will not re-emit them. Doing it properly
-means the log holding operations it cannot fold, and it means being careful about
-the version vector — a device that recorded them as seen would be telling peers
-it holds work it cannot produce, which is worse than not holding it. The count is
-reported so a person can be told; the storage is deliberately deferred.
-
 **A transport.** There is none, and that is ADR-0001 working rather than a gap:
 the core produces bytes and reads bytes. The same four calls serve a cloud
 service, a local network, a memory stick and a file attached to an email. The
 entitlement that would let the application open a socket is still absent, and
 architecture rule 10 keeps it absent until the consent screen it depends on ships
 in the same commit.
+
+### Sprint 40 — carrying what this build cannot read
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `CarriedOperation` in the document model | Completed | Verified | A project is its log, and this is part of the log |
+| `OperationLog::carry` | Completed | Verified | Bounded separately, refuses rather than discarding |
+| `OperationLog::carried_since` | Completed | Verified | The counterpart of `operations_since`; what makes a relay work |
+| `OperationLog::promote_carried` | Completed | Verified | An upgrade turns carried work into the project it always was |
+| `wire::encode_all` | Completed | Verified | Both halves interleaved into one total order |
+| `prv_engine_carried_count`, `prv_engine_promote_carried` | Completed | Verified | Driven from C against the committed header |
+| `PRVCore` carrying surface | Completed | **Verified on Linux** | Two more tests, including the three-install relay |
+| ABI minor version 1.8 | Completed | Verified | Calls added, nothing existing moved |
+
+**The limitation Sprint 39 recorded is closed.** Operations from a newer build
+are now written into the log, so they survive being closed and reopened, and they
+are re-emitted in every message the device sends afterwards. A device running an
+older build is a relay rather than a hole in a fleet, and stays one across a
+restart — which is what "relay" has to mean to be worth anything.
+
+**Why the log and not the sync layer.** ADR-0007 draws the boundary by one
+question: does a project file contain it? An operation somebody made is part of
+the project whether or not this build can fold it into a timeline. Holding these
+in the synchronisation layer would mean carrying a colleague's work until the
+application quit and then quietly stopping — the same as losing it, later and
+less visibly.
+
+**Carrying commits the log to something, and the commitment is honest.** The
+identity is recorded as seen, which stops peers resending it. That is only
+truthful because the bytes are kept: a device that recorded an operation as seen
+without holding it would end the relay at itself while every peer believed the
+work had arrived. The two halves of that promise are tested together.
+
+**What carrying cannot do**, stated because it is easy to assume otherwise: a
+carried operation takes no part in conflict detection. This build does not know
+what it touches, so it cannot tell whether it disagrees with a local edit. That
+decision moves to whichever build understands both sides — the honest place for
+it, since it is the only place it can be made correctly.
+
+**Promotion is the part worth the most.** After an upgrade,
+`promote_carried` re-reads the stored bytes under the new build's rules —
+including "understand all of it or none of it" — and the ones it now understands
+become ordinary operations. The user sees work appear that was theirs all along,
+reconstructed from nothing, because the bytes the author wrote were never
+rewritten by anyone in between.
 
 ### The privacy distinction the tests found
 

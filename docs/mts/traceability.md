@@ -134,7 +134,10 @@ did not have would be worse than no row at all.
 | The profile is explainable and correctable | MP#5 | `prv-learning::Profile::explain` | `the_user_can_correct_one_inference_and_delete_all_of_them` | **Verified** |
 | The profile holds nothing that identifies anyone | MP#26 | `prv-learning::Observation` | structural — an observation holds six scores and an outcome | **Enforced** |
 | Scenario and profile weights combine | ADR-0006 | `prv-learning::Profile::weights_from` | `learning_starts_from_the_scenario_rather_than_replacing_it` | **Verified** |
-| Agent registry and orchestration | MP#6, MP#19 | — | — | Not started |
+| Agent registry: what the system can do, and where | MP#6, MP#19 | `prv-ai::agent` | `the_on_device_agent_is_preferred_even_when_the_cloud_is_available`, `every_cloud_agent_names_the_agreement_it_needs` | **Verified** |
+| Orchestration: dependency order, deferral, failure | MP#6, MP#19 | `prv-ai::task`, `prv-ai::run` | `a_dependency_always_comes_first`, `a_cycle_is_refused_rather_than_broken`, `a_failure_skips_everything_downstream_of_it_transitively` | **Verified** |
+| No musical decision is made on a server | MP#19, ADR-0006 | `prv-ai::Capability::available_agent` | `a_capability_with_no_local_path_is_never_an_essential_one`, `a_whole_plan_runs_with_no_agreements_at_all` | **Verified** |
+| A schedule says in advance what would leave the device | MP#26, MP#19 | `prv-ai::Schedule` | `a_schedule_says_in_advance_whether_anything_leaves_the_device` | **Verified** |
 
 ## Product and platform
 
@@ -151,7 +154,12 @@ did not have would be worse than no row at all.
 | Thinning is safe to run on every save | MP#24 | `prv-sync::backup::thin` | `thinning_twice_changes_nothing` | **Verified** |
 | A project travels as bytes, not as a copy | MP#24, ADR-0003 | `prv-project::wire` | `every_payload_survives_the_journey_intact`, `two_laptops_a_night_apart_and_only_bytes_between_them` | **Verified** |
 | A shipped operation number never changes meaning | ADR-0003 | `prv-project::wire` | `every_payload_keeps_the_number_it_was_given`, `no_two_payloads_share_a_number` | **Verified** |
-| A newer build's work is carried, never dropped | MP#24, ADR-0003 | `prv-project::wire::Unrecognised` | `an_operation_from_a_newer_build_is_carried_rather_than_dropped`, `a_message_a_build_cannot_read_still_arrives_at_the_build_that_can` | **Verified** |
+| A newer build's work is carried, never dropped | MP#24, ADR-0003 | `prv-project::CarriedOperation` | `an_operation_from_a_newer_build_is_carried_rather_than_dropped`, `a_message_a_build_cannot_read_still_arrives_at_the_build_that_can` | **Verified** |
+| A relay survives being closed and reopened | MP#24, MP#9 | `prv-project::OperationLog::carry` | `a_relay_still_relays_after_being_closed_and_reopened`, `a_stale_device_carries_work_it_cannot_read_to_the_device_that_can` | **Verified** |
+| Claiming to have seen work means holding it | MP#24 | `prv-project::OperationLog::carry` | `carrying_records_it_as_seen_so_peers_stop_resending_it`, `a_carried_operation_is_not_sent_back_to_the_peer_that_sent_it` | **Verified** |
+| A relay is not detectable from the outside | MP#24 | `prv-project::wire::encode_all` | `a_relay_sends_what_it_understands_and_what_it_does_not_in_one_order` | **Verified** |
+| An upgrade recovers work that could only be carried | MP#9, ADR-0003 | `prv-project::OperationLog::promote_carried` | `an_upgrade_turns_carried_work_into_the_project_it_always_was`, `a_promoted_operation_is_not_taken_in_again` | **Verified** |
+| Carrying is bounded and refuses rather than discarding | MP#26, MP#9 | `prv-project::ProjectError::CarriedFull` | `carrying_is_bounded_and_refuses_rather_than_discarding` | **Verified** |
 | A half-understood edit is never applied | MP#24, ADR-0003 | `prv-project::wire` | `an_entry_a_newer_build_extended_is_not_half_applied`, `a_payload_a_newer_build_extended_is_not_half_applied` | **Verified** |
 | The format can grow without a flag day | ADR-0003 | `prv-project::wire` | `a_header_field_from_a_newer_build_is_stepped_over_and_kept`, `a_higher_minor_version_is_read_and_a_higher_major_is_not` | **Verified** |
 | Untrusted bytes cannot make the core allocate | MP#26 | `prv-project::wire::plausible` | `a_count_larger_than_the_bytes_present_is_refused_without_allocating`, `truncation_at_every_length_is_refused_rather_than_accepted` | **Verified** |

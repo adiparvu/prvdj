@@ -530,6 +530,59 @@ pub unsafe extern "C" fn prv_engine_sync_merge(
     .code()
 }
 
+/// How many operations this project holds that were made by a newer build.
+///
+/// Non-zero means part of the project was made with a newer version of the
+/// application. It is being kept and passed on to other devices, and it cannot
+/// be shown here — which is worth telling the person looking at the screen,
+/// because otherwise the project silently appears to be missing work.
+///
+/// # Safety
+///
+/// `engine` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_carried_count(
+    engine: *const Engine,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let count = unsafe { as_ref(engine) }?.carried_count();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = count;
+        Ok(())
+    })
+    .code()
+}
+
+/// Re-reads carried operations, keeping the ones this build now understands.
+///
+/// What an upgrade is for. Work that arrived from a newer version of the
+/// application and could only be carried becomes part of the project the moment
+/// this build learns its meaning — the same bytes the author wrote, not a
+/// reconstruction of them.
+///
+/// Cheap when there is nothing to do, so the natural place to call it is
+/// immediately after opening a project.
+///
+/// # Safety
+///
+/// `engine` must be live and `out_promoted` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_promote_carried(
+    engine: *mut Engine,
+    out_promoted: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let promoted = unsafe { as_mut(engine) }?.promote_carried()?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_promoted) }? = promoted;
+        Ok(())
+    })
+    .code()
+}
+
 // ---------------------------------------------------------------------------
 // Planning
 //

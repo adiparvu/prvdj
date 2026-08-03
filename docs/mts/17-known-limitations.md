@@ -85,22 +85,7 @@ Icons, illustrations, charts, borders, controller colours and accessibility
 colours are declared as pending rather than invented. Each lands with the first
 screen that consumes it. See section 5.
 
-## 6. Unreadable operations are relayed but not stored
-
-The wire format lets a device pass on operations made by a newer build, byte for
-byte, so an install a version behind relays rather than blocking a fleet. What it
-does not do is *hold* them: they are not written into the log, so a device that
-merges a message and later derives a new one from its own log will not re-emit
-them.
-
-Doing it properly means the log holding operations it cannot fold, and it means
-being careful about the version vector — a device that recorded them as seen
-would be telling peers it holds work it cannot produce, which is worse than not
-holding it at all. `SyncReport::carried` counts them so a person can be told
-"part of this project was made with a newer version of the app", which is true
-and actionable. The storage is deferred deliberately, not overlooked.
-
-## 7. Placement identities are namespaced, not globally unique
+## 6. Placement identities are namespaced, not globally unique
 
 The high half of a placement identity is a 32-bit fingerprint of the device that
 allocated it, so two devices collide only if their fingerprints do. Exactness
@@ -111,7 +96,7 @@ The risk is bounded by the devices sharing one project — a handful, not a
 population — and a collision fails as a reported conflict rather than as silent
 loss. Widening it belongs with the next major version of the boundary, not before.
 
-## 8. There is no transport
+## 7. There is no transport
 
 The core produces bytes and reads bytes; nothing opens a socket, which is
 ADR-0001 working rather than a gap. The same four calls serve a cloud service, a
@@ -122,7 +107,7 @@ and architecture rule 10 keeps it that way. It arrives in the same commit as the
 consent screen it depends on — deliberately, so that the operating system makes
 an outbound connection impossible until the user has been asked.
 
-## 9. Nothing user-facing exists
+## 8. Nothing user-facing exists
 
 By design. Master Prompt #30 sequences AI behind a stable timeline, playback and
 export, because a planner evaluated against an unstable foundation cannot be

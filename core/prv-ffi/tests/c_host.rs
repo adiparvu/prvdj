@@ -257,6 +257,62 @@ int main(void) {
               == PRV_INVALID_ARGUMENT,
           "arbitrary bytes were accepted as a version vector");
 
+    /* An operation this build cannot read is kept and passed on, not dropped.
+     *
+     * The message is written by hand because the encoder cannot produce one:
+     * it is what a build that does not exist yet would send. */
+    uint8_t future[] = {
+        'P', 'R', 'V', 'L',           /* magic */
+        1, 0,                          /* major */
+        0, 0,                          /* minor */
+        4, 0, 0, 0,                    /* header length */
+        1, 0, 0, 0,                    /* one entry */
+        38, 0, 0, 0,                   /* entry length */
+        3, 0, 0, 0, 0, 0, 0, 0,        /* device 3 */
+        1, 0, 0, 0, 0, 0, 0, 0,        /* sequence 1 */
+        0, 0, 0, 0, 0, 0, 0, 0,        /* timestamp */
+        0, 0, 0, 0,                    /* empty context */
+        0x60, 0xEA,                    /* a payload kind from the future */
+        4, 0, 0, 0,                    /* payload length */
+        's', 'o', 'o', 'n'
+    };
+
+    CHECK(prv_engine_sync_merge(peer, future, sizeof future, &applied, &already, &conflicts,
+                                &carried) == PRV_OK,
+          "a message from a newer build was refused outright");
+    CHECK(applied == 0, "an unreadable operation was applied");
+    CHECK(carried == 1, "an unreadable operation was not kept");
+
+    uint64_t held = 0;
+    CHECK(prv_engine_carried_count(peer, &held) == PRV_OK, "the carried count could not be read");
+    CHECK(held == 1, "the operation was counted but not held");
+
+    /* And it is still beyond this build, so promoting keeps rather than loses it. */
+    uint64_t promoted = 0;
+    CHECK(prv_engine_promote_carried(peer, &promoted) == PRV_OK, "promoting failed");
+    CHECK(promoted == 0, "this build claimed to understand next year's work");
+    CHECK(prv_engine_carried_count(peer, &held) == PRV_OK, "the carried count could not be read");
+    CHECK(held == 1, "an operation was lost to a promotion attempt");
+
+    /* It travels onward in the next message this device sends. */
+    PrvEngine *onward = NULL;
+    CHECK(prv_engine_create(48000, 2, 512, &onward) == PRV_OK, "the third device would not start");
+    CHECK(prv_engine_set_device(onward, 4) == PRV_OK, "the third device would not take a name");
+    CHECK(prv_engine_sync_state(onward, peer_state, sizeof peer_state, &needed) == PRV_OK,
+          "the third device's state could not be read");
+    CHECK(prv_engine_sync_prepare(peer, peer_state, needed, &message_len) == PRV_OK,
+          "the relay could not prepare a message");
+    CHECK(message_len <= sizeof outbound, "the relayed message does not fit the test's buffer");
+    CHECK(prv_engine_sync_outbound(peer, outbound, sizeof outbound, &written) == PRV_OK,
+          "the relayed message could not be copied out");
+    CHECK(prv_engine_sync_merge(onward, outbound, written, &applied, &already, &conflicts,
+                                &carried) == PRV_OK,
+          "the third device would not merge the relayed message");
+    CHECK(carried == 1, "the relay did not pass on what it could not read");
+    CHECK(prv_engine_carried_count(onward, &held) == PRV_OK, "the carried count could not be read");
+    CHECK(held == 1, "the third device did not keep the relayed work");
+    prv_engine_destroy(onward);
+
     /* An identity cannot be changed underneath a log that has already used it. */
     CHECK(prv_engine_set_device(peer, 3) == PRV_INVALID_STATE,
           "the peer changed identity after it had already merged work");

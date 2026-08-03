@@ -48,25 +48,21 @@ pub struct SyncReport {
     pub already_present: u64,
     /// Pairs that disagree and need a person to decide.
     pub conflicts: u64,
-    /// Operations this build could not interpret.
+    /// Operations this build could not interpret, and kept anyway.
     ///
-    /// # What this count promises, and what it does not
+    /// They are written into the log, so they survive being closed and reopened
+    /// and are sent on to the next peer byte for byte. A device running an older
+    /// build is a relay rather than a hole in a fleet, and stays one.
     ///
-    /// A message containing them can be passed on byte for byte — that is what
-    /// [`prv_project::wire`] guarantees and what makes a device running an older
-    /// build a relay rather than a hole in a fleet.
+    /// What they cannot do is take part in the project: they are not folded into
+    /// a timeline and they cannot be checked for conflicts, because this build
+    /// does not know what they touch. That decision moves to whichever build
+    /// understands both sides.
     ///
-    /// What is *not* built is store-and-forward: they are not written into the
-    /// log, so a device that merges a message and later derives a new one from
-    /// its own log will not re-emit them. Doing that properly means the log
-    /// holding operations it cannot fold, and it means being careful about the
-    /// version vector — a device that recorded them as seen would be telling
-    /// peers it holds work it cannot produce, which is worse than not holding
-    /// it.
-    ///
-    /// So this count exists to be shown to a person. A non-zero value means
-    /// "some of this project was made with a newer version of the app", which is
-    /// true, actionable, and the honest thing to say.
+    /// A non-zero value means "part of this project was made with a newer
+    /// version of the app" — true, actionable, and worth saying. It stops being
+    /// true after an upgrade and a call to
+    /// [`Engine::promote_carried`].
     pub carried: u64,
 }
 
@@ -567,8 +563,12 @@ impl Engine {
     /// single message.
     pub fn sync_prepare(&mut self, peer_state: &[u8]) -> Result<usize, Status> {
         let peer = wire::decode_vector(peer_state).map_err(|_| Status::InvalidArgument)?;
+        // Both halves. What this build cannot read, it can still be the reason
+        // somebody else receives — and a peer cannot tell the difference,
+        // because the two are interleaved into the one total order.
         let operations = self.log.operations_since(&peer);
-        self.outbound = wire::encode(&operations).map_err(|_| Status::Refused)?;
+        let carried = self.log.carried_since(&peer);
+        self.outbound = wire::encode_all(&operations, &carried).map_err(|_| Status::Refused)?;
         Ok(self.outbound.len())
     }
 
@@ -596,10 +596,15 @@ impl Engine {
     /// an operation.
     pub fn sync_merge(&mut self, bytes: &[u8]) -> Result<SyncReport, Status> {
         let message = wire::decode(bytes).map_err(|_| Status::InvalidArgument)?;
-        let carried = message.unrecognised_count();
         let report = self
             .log
             .merge(&message.to_operations())
+            .map_err(|_| Status::Refused)?;
+        // Kept, not merely counted. The log records them as seen, which stops
+        // peers resending them — honest only because it also holds the bytes.
+        let carried = self
+            .log
+            .carry(&message.to_carried())
             .map_err(|_| Status::Refused)?;
         self.refold()?;
         Ok(SyncReport {
@@ -608,6 +613,35 @@ impl Engine {
             conflicts: report.conflicts.len().try_into().unwrap_or(u64::MAX),
             carried: carried.try_into().unwrap_or(u64::MAX),
         })
+    }
+
+    /// How many operations this project holds that were made by a newer build.
+    ///
+    /// Non-zero means part of the project was made with a newer version of the
+    /// application. It is being kept and passed on, and it cannot be shown.
+    #[must_use]
+    pub fn carried_count(&self) -> u64 {
+        self.log.carried_count().try_into().unwrap_or(u64::MAX)
+    }
+
+    /// Re-reads carried operations, keeping the ones this build now understands.
+    ///
+    /// Returns how many became ordinary operations. What an upgrade is for:
+    /// work that arrived from a newer build and could only be carried becomes
+    /// part of the project the moment this build learns its meaning. Cheap when
+    /// there is nothing to do, so the natural place to call it is immediately
+    /// after opening a project.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidArgument`] if the project cannot be refolded, which
+    /// cannot happen for a shape that was already valid.
+    pub fn promote_carried(&mut self) -> Result<u64, Status> {
+        let promoted = self.log.promote_carried();
+        if promoted > 0 {
+            self.refold()?;
+        }
+        Ok(promoted.try_into().unwrap_or(u64::MAX))
     }
 
     /// Rebuilds the materialised state and the renderer's automation.
@@ -808,6 +842,89 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A message from a build that does not exist yet, carrying one operation
+    /// this one cannot read. Built by hand, because the encoder cannot make it.
+    fn a_message_from_the_future(author: u64, sequence: u64) -> Vec<u8> {
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&author.to_le_bytes());
+        entry.extend_from_slice(&sequence.to_le_bytes());
+        entry.extend_from_slice(&0_i64.to_le_bytes());
+        entry.extend_from_slice(&0_u32.to_le_bytes());
+        entry.extend_from_slice(&60_000_u16.to_le_bytes());
+        entry.extend_from_slice(&4_u32.to_le_bytes());
+        entry.extend_from_slice(b"soon");
+
+        let mut header = Vec::new();
+        header.extend_from_slice(&1_u32.to_le_bytes());
+
+        let mut message = Vec::new();
+        message.extend_from_slice(b"PRVL");
+        message.extend_from_slice(&1_u16.to_le_bytes());
+        message.extend_from_slice(&0_u16.to_le_bytes());
+        message.extend_from_slice(&u32::try_from(header.len()).expect("fits").to_le_bytes());
+        message.extend_from_slice(&header);
+        message.extend_from_slice(&u32::try_from(entry.len()).expect("fits").to_le_bytes());
+        message.extend_from_slice(&entry);
+        message
+    }
+
+    #[test]
+    fn a_stale_device_carries_work_it_cannot_read_to_the_device_that_can() {
+        // Three installations, the middle one a version behind. The property
+        // that makes it a relay rather than a hole: what it cannot apply, it
+        // keeps and passes on, and the third receives it byte for byte.
+        let mut relay = engine(2);
+        let received = relay
+            .sync_merge(&a_message_from_the_future(3, 1))
+            .expect("merges");
+        assert_eq!(received.applied, 0);
+        assert_eq!(received.carried, 1);
+        assert_eq!(relay.carried_count(), 1);
+
+        // It also does its own work, which must travel in the same message.
+        relay.place_track(1, 0, 4_096, 0, 0, 1_000).expect("places");
+
+        let onward = engine(4);
+        let mut state = vec![0_u8; 512];
+        let needed = onward.sync_state(&mut state).expect("state");
+        let size = relay.sync_prepare(&state[..needed]).expect("prepares");
+        let mut message = vec![0_u8; size];
+        relay.sync_outbound(&mut message).expect("copies");
+
+        let mut onward = onward;
+        let arrived = onward.sync_merge(&message).expect("merges");
+        assert_eq!(arrived.applied, 1, "the relay's own edit did not travel");
+        assert_eq!(arrived.carried, 1, "the future's edit did not travel");
+        assert_eq!(onward.carried_count(), 1);
+    }
+
+    #[test]
+    fn a_carried_operation_is_not_sent_back_to_the_peer_that_sent_it() {
+        // Carrying records the identity as seen, so the sender stops resending.
+        // Honest only because the bytes are kept — which the previous test is
+        // what proves.
+        let mut relay = engine(2);
+        relay
+            .sync_merge(&a_message_from_the_future(3, 1))
+            .expect("merges");
+
+        let mut state = vec![0_u8; 512];
+        let needed = relay.sync_state(&mut state).expect("state");
+        let seen = wire::decode_vector(&state[..needed]).expect("decodes");
+        assert!(seen.has_seen(prv_project::OperationId::new(DeviceId::new(3), 1)));
+    }
+
+    #[test]
+    fn promoting_finds_nothing_while_the_work_is_still_beyond_this_build() {
+        let mut relay = engine(2);
+        relay
+            .sync_merge(&a_message_from_the_future(3, 1))
+            .expect("merges");
+
+        assert_eq!(relay.promote_carried().expect("promotes"), 0);
+        assert_eq!(relay.carried_count(), 1, "an operation was lost to a retry");
     }
 
     #[test]

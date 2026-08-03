@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 7
+#define PRV_ABI_MINOR 8
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -489,6 +489,29 @@ int32_t prv_engine_sync_outbound(const PrvEngine *engine, uint8_t *into,
 int32_t prv_engine_sync_merge(PrvEngine *engine, const uint8_t *bytes, uint64_t len,
                               uint64_t *out_applied, uint64_t *out_already_present,
                               uint64_t *out_conflicts, uint64_t *out_carried);
+
+/*
+ * How many operations this project holds that a newer build made.
+ *
+ * Non-zero means part of the project was made with a newer version of
+ * the application. It is kept and passed on to other devices, and it
+ * cannot be shown here — worth telling the person at the screen, because
+ * otherwise the project silently appears to be missing work.
+ */
+int32_t prv_engine_carried_count(const PrvEngine *engine, uint64_t *out_count);
+
+/*
+ * Re-reads carried operations, keeping the ones this build now
+ * understands.
+ *
+ * What an upgrade is for. Work that arrived from a newer version and
+ * could only be carried becomes part of the project the moment this build
+ * learns its meaning — the same bytes the author wrote, not a
+ * reconstruction of them.
+ *
+ * Cheap when there is nothing to do. Call it after opening a project.
+ */
+int32_t prv_engine_promote_carried(PrvEngine *engine, uint64_t *out_promoted);
 
 /*
  * Creates a planner.

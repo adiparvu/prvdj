@@ -66,12 +66,12 @@ pub mod wire;
 
 pub use log::{Conflict, ConflictKind, MergeReport, OperationLog, ProjectError, Undo};
 pub use operation::{
-    DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload, PlacementId, Target,
-    TrackRef, VersionVector,
+    CarriedOperation, DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload,
+    PlacementId, Target, TrackRef, VersionVector,
 };
 pub use parameter::{
     Interpolation, ParameterAddress, ParameterError, ParameterKey, ParameterOwner,
     PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
 };
 pub use state::{Marker, Placement, ProjectState};
-pub use wire::{Entry, Message, Unrecognised, WireError};
+pub use wire::{Entry, Message, WireError};

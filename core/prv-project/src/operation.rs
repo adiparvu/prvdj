@@ -512,6 +512,124 @@ impl fmt::Display for Target {
     }
 }
 
+/// An operation this build cannot interpret, kept so it can travel on.
+///
+/// # Why the document model holds something it cannot read
+///
+/// A project is its log, and this is part of the log. An operation made by a
+/// newer build is somebody's edit; the fact that this build cannot fold it into
+/// a timeline does not make it less so, and ADR-0003's rule that a variant is
+/// never removed only helps the build that has the variant.
+///
+/// Keeping it here rather than in the synchronisation layer is what makes a
+/// relay survive being closed. A device that held these only in memory would
+/// carry a colleague's work until it quit and then quietly stop, which is the
+/// same as losing it — later, and less visibly.
+///
+/// # What it can and cannot do
+///
+/// It can be ordered, deduplicated, reported and sent on, because identity,
+/// causal context and time are envelope fields every build shares. It cannot be
+/// folded into a project, and it cannot take part in conflict detection: this
+/// build does not know what it touches. That decision moves to whichever build
+/// understands both sides, which is the honest place for it.
+///
+/// It can also stop being carried. [`OperationLog::promote_carried`](crate::OperationLog::promote_carried)
+/// re-reads them after an upgrade, and the ones the new build understands become
+/// ordinary operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CarriedOperation {
+    id: OperationId,
+    context: VersionVector,
+    timestamp_micros: i64,
+    kind: u16,
+    /// The wire entry body exactly as received, including the fields above.
+    ///
+    /// They are held twice: once parsed, for ordering and reporting, and once
+    /// raw, so that passing the operation on cannot alter a single byte of it.
+    /// Re-encoding from the parsed fields would be a re-encoding by *this*
+    /// build, which is precisely what must not happen to something this build
+    /// does not understand.
+    bytes: Vec<u8>,
+}
+
+impl CarriedOperation {
+    /// Builds one. Called by the decoder, which is the only thing that can.
+    pub(crate) const fn new(
+        id: OperationId,
+        context: VersionVector,
+        timestamp_micros: i64,
+        kind: u16,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            id,
+            context,
+            timestamp_micros,
+            kind,
+            bytes,
+        }
+    }
+
+    /// Who made it, and where in their own numbering.
+    #[must_use]
+    pub const fn id(&self) -> OperationId {
+        self.id
+    }
+
+    /// What its author had already seen.
+    #[must_use]
+    pub const fn context(&self) -> &VersionVector {
+        &self.context
+    }
+
+    /// The author's wall clock, in microseconds since the epoch.
+    #[must_use]
+    pub const fn timestamp_micros(&self) -> i64 {
+        self.timestamp_micros
+    }
+
+    /// The payload discriminant this build does not know.
+    ///
+    /// Zero when the payload *was* recognised but the entry carried fields
+    /// beyond it — still not understood, but the kind was not the unfamiliar
+    /// part, and saying otherwise sends a reader looking for a payload number
+    /// that is fine.
+    #[must_use]
+    pub const fn kind(&self) -> u16 {
+        self.kind
+    }
+
+    /// The entry body, byte for byte as it arrived.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// How many bytes it occupies.
+    #[must_use]
+    pub fn byte_len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// The logical time used for ordering, as [`Operation::logical_time`].
+    #[must_use]
+    pub fn logical_time(&self) -> u64 {
+        self.context.logical_time()
+    }
+
+    /// The deterministic sort key, computed exactly as [`Operation::sort_key`].
+    ///
+    /// The same key, from the same envelope fields, so a carried operation
+    /// takes its rightful place in a total order the build that made it would
+    /// compute identically. An operation nobody can read still knows where it
+    /// belongs.
+    #[must_use]
+    pub fn sort_key(&self) -> (u64, u64, u64) {
+        (self.logical_time(), self.id.device.get(), self.id.sequence)
+    }
+}
+
 /// One entry in the log.
 ///
 /// `Eq` follows the payload's lead and is not derived; see

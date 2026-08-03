@@ -488,6 +488,33 @@ public final class Engine {
         )
     }
 
+    /// How many operations this project holds that a newer build made.
+    ///
+    /// Non-zero means part of the project was made with a newer version of the
+    /// application. It is kept and passed on to other devices, and it cannot be
+    /// shown here — worth telling the person at the screen, because otherwise
+    /// the project silently appears to be missing work.
+    public func carriedCount() throws -> UInt64 {
+        var value: UInt64 = 0
+        try EngineError.check(prv_engine_carried_count(handle, &value))
+        return value
+    }
+
+    /// Re-reads carried operations, keeping the ones this build now understands.
+    ///
+    /// What an upgrade is for. Work that arrived from a newer version and could
+    /// only be carried becomes part of the project the moment this build learns
+    /// its meaning — the same bytes the author wrote, not a reconstruction.
+    ///
+    /// Cheap when there is nothing to do, so the natural place to call it is
+    /// immediately after opening a project.
+    @discardableResult
+    public func promoteCarried() throws -> UInt64 {
+        var value: UInt64 = 0
+        try EngineError.check(prv_engine_promote_carried(handle, &value))
+        return value
+    }
+
     /// Runs the boundary's ask-then-fill convention once.
     ///
     /// Every call that returns bytes writes the size it needs whether or not the

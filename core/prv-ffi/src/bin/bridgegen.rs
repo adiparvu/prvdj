@@ -127,6 +127,10 @@ fn declarations() -> Vec<Declaration> {
         *mut u64,
         *mut u64,
     ) -> i32 = prv_ffi::exports::prv_engine_sync_merge;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_carried_count;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_promote_carried;
     let _: unsafe extern "C" fn(*mut *mut prv_ffi::Planner) -> i32 =
         prv_ffi::exports::prv_planner_create;
     let _: unsafe extern "C" fn(*mut prv_ffi::Planner) = prv_ffi::exports::prv_planner_destroy;
@@ -499,6 +503,33 @@ fn declarations() -> Vec<Declaration> {
                 "an older version relays rather than blocking. What it cannot do is",
                 "show them, so tell the user that some of the project was made with a",
                 "newer version of the app.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_carried_count(const PrvEngine *engine, \
+                        uint64_t *out_count)",
+            doc: &[
+                "How many operations this project holds that a newer build made.",
+                "",
+                "Non-zero means part of the project was made with a newer version of",
+                "the application. It is kept and passed on to other devices, and it",
+                "cannot be shown here — worth telling the person at the screen, because",
+                "otherwise the project silently appears to be missing work.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_promote_carried(PrvEngine *engine, \
+                        uint64_t *out_promoted)",
+            doc: &[
+                "Re-reads carried operations, keeping the ones this build now",
+                "understands.",
+                "",
+                "What an upgrade is for. Work that arrived from a newer version and",
+                "could only be carried becomes part of the project the moment this build",
+                "learns its meaning — the same bytes the author wrote, not a",
+                "reconstruction of them.",
+                "",
+                "Cheap when there is nothing to do. Call it after opening a project.",
             ],
         },
         Declaration {

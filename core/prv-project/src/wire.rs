@@ -120,8 +120,8 @@ use core::fmt;
 use prv_time::{Frames, Tempo};
 
 use crate::operation::{
-    DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload, PlacementId,
-    TrackRef, VersionVector,
+    CarriedOperation, DeviceId, MarkerId, MarkerKind, Operation, OperationId, OperationPayload,
+    PlacementId, TrackRef, VersionVector,
 };
 use crate::parameter::{
     Interpolation, ParameterAddress, ParameterKey, ParameterOwner, PluginParameterId,
@@ -307,71 +307,13 @@ impl fmt::Display for WireError {
 
 impl core::error::Error for WireError {}
 
-/// An entry this build could not fully understand.
-///
-/// Kept byte for byte so it can be passed on exactly as it arrived. Its
-/// identity, context and timestamp are read out because those fields are part of
-/// the envelope every build shares — which is what lets a stale device order,
-/// deduplicate and report an operation whose meaning it does not know.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Unrecognised {
-    id: OperationId,
-    context: VersionVector,
-    timestamp_micros: i64,
-    kind: u16,
-    /// The entry body exactly as received, including the fields above.
-    ///
-    /// They are stored twice: once parsed, for reporting, and once raw, so that
-    /// passing the entry on cannot alter a single byte of it. Re-encoding from
-    /// the parsed fields would be a re-encoding by *this* build, which is
-    /// precisely what must not happen to something this build does not
-    /// understand.
-    bytes: Vec<u8>,
-}
-
-impl Unrecognised {
-    /// Who made it, and when in their own numbering.
-    #[must_use]
-    pub const fn id(&self) -> OperationId {
-        self.id
-    }
-
-    /// What its author had already seen.
-    #[must_use]
-    pub const fn context(&self) -> &VersionVector {
-        &self.context
-    }
-
-    /// The author's wall clock, in microseconds since the epoch.
-    #[must_use]
-    pub const fn timestamp_micros(&self) -> i64 {
-        self.timestamp_micros
-    }
-
-    /// The payload discriminant this build does not know.
-    ///
-    /// Zero when the payload *was* recognised but the entry carried fields
-    /// beyond it — the entry is still not understood, but the kind is not what
-    /// was unfamiliar.
-    #[must_use]
-    pub const fn kind(&self) -> u16 {
-        self.kind
-    }
-
-    /// How many bytes it occupies.
-    #[must_use]
-    pub fn byte_len(&self) -> usize {
-        self.bytes.len()
-    }
-}
-
 /// One item of a message.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Entry {
     /// An operation this build can apply.
     Understood(Operation),
     /// An operation this build can only carry.
-    Unrecognised(Unrecognised),
+    Unrecognised(CarriedOperation),
 }
 
 /// A decoded message.
@@ -404,7 +346,7 @@ impl Message {
     }
 
     /// The entries that can only be carried.
-    pub fn unrecognised(&self) -> impl Iterator<Item = &Unrecognised> {
+    pub fn unrecognised(&self) -> impl Iterator<Item = &CarriedOperation> {
         self.entries.iter().filter_map(|entry| match entry {
             Entry::Unrecognised(unknown) => Some(unknown),
             Entry::Understood(_) => None,
@@ -425,6 +367,13 @@ impl Message {
     #[must_use]
     pub fn to_operations(&self) -> Vec<Operation> {
         self.understood().cloned().collect()
+    }
+
+    /// The operations that could not be read, ready to hand to
+    /// [`OperationLog::carry`](crate::OperationLog::carry).
+    #[must_use]
+    pub fn to_carried(&self) -> Vec<CarriedOperation> {
+        self.unrecognised().cloned().collect()
     }
 
     /// How many entries there are.
@@ -476,10 +425,49 @@ impl Message {
                     write_operation(&mut entry, &mut body, operation)?;
                     push_frame(&mut out, &entry)?;
                 }
-                Entry::Unrecognised(unknown) => push_frame(&mut out, &unknown.bytes)?,
+                Entry::Unrecognised(unknown) => push_frame(&mut out, unknown.bytes())?,
             }
         }
         Ok(out)
+    }
+}
+
+/// The entry body one operation encodes to.
+///
+/// Exposed for tests that have to build the state an upgrade leaves behind, and
+/// for nothing else: a caller with an [`Operation`] should encode a message
+/// rather than an entry.
+#[cfg(test)]
+pub(crate) fn entry_body(operation: &Operation) -> Result<Vec<u8>, WireError> {
+    let mut body = Vec::new();
+    let mut scratch = Vec::new();
+    write_operation(&mut body, &mut scratch, operation)?;
+    Ok(body)
+}
+
+/// Re-reads a carried operation, in case this build now understands it.
+///
+/// `None` while it is still beyond this build. What makes an upgrade restore
+/// somebody's work rather than merely stop losing new work: the bytes were kept
+/// exactly as they arrived, so reading them later is reading what the author
+/// wrote, not a reconstruction of it.
+///
+/// Not public. [`OperationLog::promote_carried`](crate::OperationLog::promote_carried)
+/// is the way to use it, because promoting is a change to the log and the log
+/// has to be the one that makes it.
+pub(crate) fn read_carried(carried: &CarriedOperation) -> Option<Operation> {
+    // The stored bytes are an entry body: exactly what `read_entry` reads once
+    // the frame around it has been taken off. Re-framing and re-reading is what
+    // guarantees an upgraded build applies the same rules to it as it would to
+    // the same operation arriving fresh — including "understand all of it or
+    // none of it".
+    let mut framed = Vec::with_capacity(carried.byte_len().saturating_add(4));
+    push_frame(&mut framed, carried.bytes()).ok()?;
+
+    let mut reader = Reader::new(&framed);
+    match read_entry(&mut reader) {
+        Ok(Entry::Understood(operation)) => Some(operation),
+        Ok(Entry::Unrecognised(_)) | Err(_) => None,
     }
 }
 
@@ -559,6 +547,52 @@ pub fn encode(operations: &[Operation]) -> Result<Vec<u8>, WireError> {
         entry.clear();
         write_operation(&mut entry, &mut body, operation)?;
         push_frame(&mut out, &entry)?;
+    }
+    Ok(out)
+}
+
+/// Turns operations and carried operations into one message.
+///
+/// What a relay actually sends. The two lists are interleaved into the total
+/// order every build computes identically, so a message assembled from a log's
+/// readable and unreadable halves is byte-for-byte the message that log would
+/// have produced if it understood everything — which is what stops a relay being
+/// detectable from the outside, and what keeps the encoding canonical.
+///
+/// # Errors
+///
+/// As [`encode`].
+pub fn encode_all(
+    operations: &[Operation],
+    carried: &[CarriedOperation],
+) -> Result<Vec<u8>, WireError> {
+    let total = operations.len().saturating_add(carried.len());
+    let mut out = begin(total, FORMAT_MINOR, &[])?;
+    let mut entry = Vec::new();
+    let mut body = Vec::new();
+
+    let mut understood = operations.iter().peekable();
+    let mut unreadable = carried.iter().peekable();
+    loop {
+        // Whichever comes first in the total order. Neither list is preferred:
+        // preferring one would make a relay's messages differ from an ordinary
+        // device's, for no reason a reader could act on.
+        let take_understood = match (understood.peek(), unreadable.peek()) {
+            (Some(operation), Some(other)) => operation.sort_key() <= other.sort_key(),
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+
+        if take_understood {
+            if let Some(operation) = understood.next() {
+                entry.clear();
+                write_operation(&mut entry, &mut body, operation)?;
+                push_frame(&mut out, &entry)?;
+            }
+        } else if let Some(operation) = unreadable.next() {
+            push_frame(&mut out, operation.bytes())?;
+        }
     }
     Ok(out)
 }
@@ -1054,13 +1088,13 @@ fn read_entry(reader: &mut Reader<'_>) -> Result<Entry, WireError> {
     let payload_bytes = entry.take(payload_length)?;
 
     let carry = |kind: u16| {
-        Ok(Entry::Unrecognised(Unrecognised {
+        Ok(Entry::Unrecognised(CarriedOperation::new(
             id,
-            context: context.clone(),
+            context.clone(),
             timestamp_micros,
             kind,
-            bytes: bytes.to_vec(),
-        }))
+            bytes.to_vec(),
+        )))
     };
 
     // Fields appended to the entry by a newer build. The payload may well be one
@@ -2033,6 +2067,85 @@ mod tests {
 
         let written = message.encode().expect("re-encodes");
         assert_eq!(decode(&written).expect("decodes"), message);
+    }
+
+    #[test]
+    fn a_relay_sends_what_it_understands_and_what_it_does_not_in_one_order() {
+        // A message assembled from a log's readable and unreadable halves is
+        // byte-for-byte the message that log would have produced if it
+        // understood everything. A relay is not detectable from the outside.
+        let operations = all_operations();
+        let expected = encode(&operations).expect("encodes");
+
+        // Split the same set in two, as a relay's log holds it, and reassemble.
+        let carried: Vec<CarriedOperation> = decode(&expected)
+            .expect("decodes")
+            .entries()
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::Understood(operation) => {
+                    let mut body = Vec::new();
+                    let mut scratch = Vec::new();
+                    write_operation(&mut body, &mut scratch, operation).expect("encodes");
+                    Some(CarriedOperation::new(
+                        operation.id,
+                        operation.context.clone(),
+                        operation.timestamp_micros,
+                        0,
+                        body,
+                    ))
+                }
+                Entry::Unrecognised(_) => None,
+            })
+            .collect();
+
+        let (understood, unreadable) = operations.split_at(5);
+        let carried_half = carried.get(5..).expect("a tail").to_vec();
+        assert_eq!(carried_half.len(), unreadable.len());
+
+        assert_eq!(
+            encode_all(understood, &carried_half).expect("encodes"),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_carried_operation_becomes_readable_when_the_build_learns_its_meaning() {
+        // What an upgrade is for. Simulated the only way one build can: by
+        // building the state an upgrade leaves behind — an entry this build
+        // *can* read, sitting in the carried store because the build that put
+        // it there could not.
+        let operation = operation(
+            1,
+            OperationPayload::RemoveMarker {
+                marker: MarkerId::new(3),
+            },
+        );
+        let mut body = Vec::new();
+        let mut scratch = Vec::new();
+        write_operation(&mut body, &mut scratch, &operation).expect("encodes");
+
+        let carried = CarriedOperation::new(
+            operation.id,
+            operation.context.clone(),
+            operation.timestamp_micros,
+            60_000,
+            body,
+        );
+
+        assert_eq!(read_carried(&carried), Some(operation));
+    }
+
+    #[test]
+    fn an_operation_still_beyond_this_build_stays_carried() {
+        let carried = CarriedOperation::new(
+            OperationId::new(device(1), 1),
+            VersionVector::new(),
+            0,
+            60_000,
+            entry_of(1, 60_000, b"from a build that does not exist yet"),
+        );
+        assert_eq!(read_carried(&carried), None);
     }
 
     #[test]

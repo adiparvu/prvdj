@@ -23,8 +23,11 @@ Three properties are worth naming because they were designed rather than
 inherited:
 
 - **A build that cannot read an operation still carries it.** Unrecognised
-  entries are kept byte for byte, reported, and passed on unchanged, so an
-  install a version behind is a relay rather than a hole in the fleet.
+  entries are written into the log byte for byte, so they survive being closed
+  and reopened and are re-emitted in every message afterwards. An install a
+  version behind is a relay rather than a hole in the fleet, and stays one. After
+  an upgrade they are re-read, and the ones the new build understands become
+  ordinary parts of the project.
 - **Nothing half-understood is ever applied.** An entry carrying a payload this
   build knows plus a field it does not is treated as not understood, rather than
   stored stripped of its author's meaning and relayed as though it were theirs.
@@ -32,7 +35,7 @@ inherited:
   against the bytes actually present before anything is reserved.
 
 The format's limits are recorded in
-[17-known-limitations.md](17-known-limitations.md), sections 6 to 8.
+[17-known-limitations.md](17-known-limitations.md), sections 6 and 7.
 
 ## Decisions already fixed
 

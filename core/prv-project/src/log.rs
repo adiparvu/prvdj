@@ -1,7 +1,9 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
-use crate::operation::{DeviceId, Operation, OperationId, OperationPayload, Target, VersionVector};
+use crate::operation::{
+    CarriedOperation, DeviceId, Operation, OperationId, OperationPayload, Target, VersionVector,
+};
 use crate::state::ProjectState;
 
 /// The largest number of operations a single log will hold.
@@ -13,6 +15,16 @@ const MAX_OPERATIONS: usize = 1_000_000;
 
 /// The largest number of named versions.
 const MAX_LABELS: usize = 10_000;
+
+/// The largest number of operations a log will carry without understanding.
+///
+/// Bounded separately from the operations it *can* read, and for a different
+/// reason. That bound guards against a corrupt file; this one guards against a
+/// peer — a build claiming to be newer could otherwise fill a device with
+/// operations it will never be able to interpret. Reaching it means something is
+/// wrong rather than that a project got large, so it refuses rather than
+/// discarding: a carried operation is still somebody's work.
+const MAX_CARRIED: usize = 100_000;
 
 /// Failures from operating on a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +38,12 @@ pub enum ProjectError {
     DuplicateOperation(OperationId),
     /// The log has reached its bound.
     LogFull,
+    /// The log is carrying as many unreadable operations as it will.
+    ///
+    /// Reaching this means a peer has sent a great many operations this build
+    /// cannot interpret, which is a thing to tell somebody about rather than a
+    /// thing to handle quietly.
+    CarriedFull,
     /// Too many named versions.
     TooManyLabels,
     /// No version by that name.
@@ -44,6 +62,10 @@ impl fmt::Display for ProjectError {
         match self {
             Self::DuplicateOperation(id) => write!(f, "operation {id} is already in the log"),
             Self::LogFull => f.write_str("the project has too many operations"),
+            Self::CarriedFull => f.write_str(
+                "the project is already carrying as many operations as it can that were made \
+                 with a newer version",
+            ),
             Self::TooManyLabels => f.write_str("the project has too many named versions"),
             Self::UnknownLabel(name) => write!(f, "no version named \"{name}\""),
             Self::PositionOutOfRange { requested, length } => {
@@ -222,6 +244,13 @@ pub struct OperationLog {
     /// it, merging a branch back reads as "already present" and the branch's
     /// work disappears silently.
     issued: VersionVector,
+    /// Operations this build cannot interpret, in the same total order.
+    ///
+    /// Held so that a device running an older build is a relay rather than a
+    /// hole in a fleet, and held *here* rather than in the synchronisation layer
+    /// so that being closed and reopened does not quietly end the favour. See
+    /// [`CarriedOperation`].
+    carried: Vec<CarriedOperation>,
 }
 
 impl OperationLog {
@@ -256,6 +285,123 @@ impl OperationLog {
     #[must_use]
     pub const fn version_vector(&self) -> &VersionVector {
         &self.seen
+    }
+
+    /// Takes in operations this build cannot interpret, so they can travel on.
+    ///
+    /// Returns how many were new. Ones already held are skipped, exactly as a
+    /// merge skips an operation it already has: a peer sends whatever the other
+    /// side might be missing, so overlap is the normal case.
+    ///
+    /// # What carrying commits this log to
+    ///
+    /// The identity is recorded as seen, which stops peers resending it — and
+    /// that is only honest because the bytes are kept. A device that recorded
+    /// an operation as seen without keeping it would be telling the fleet it
+    /// holds work it cannot produce, and the work would end at that device
+    /// while every peer believed it had arrived.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError::CarriedFull`] at the bound, without taking any
+    /// of the batch. Refusing rather than discarding is the same rule the
+    /// outbox follows and for the same reason: this is somebody's work, not a
+    /// record of it.
+    pub fn carry(&mut self, operations: &[CarriedOperation]) -> Result<usize, ProjectError> {
+        let fresh: Vec<&CarriedOperation> = operations
+            .iter()
+            .filter(|operation| !self.holds(operation.id()))
+            .collect();
+        if self.carried.len().saturating_add(fresh.len()) > MAX_CARRIED {
+            return Err(ProjectError::CarriedFull);
+        }
+
+        let kept = fresh.len();
+        for operation in fresh {
+            let key = operation.sort_key();
+            let position = self
+                .carried
+                .partition_point(|existing| existing.sort_key() < key);
+            self.seen.observe(operation.id());
+            self.issued.observe(operation.id());
+            self.carried.insert(position, operation.clone());
+        }
+        Ok(kept)
+    }
+
+    /// Whether an operation is present at all, readable or not.
+    ///
+    /// Distinct from [`OperationLog::contains`], which asks whether it is
+    /// present *and applicable*. Deduplication needs this one: an operation
+    /// received twice, once before an upgrade and once after, must not be
+    /// stored twice.
+    #[must_use]
+    pub fn holds(&self, id: OperationId) -> bool {
+        self.contains(id) || self.carried.iter().any(|carried| carried.id() == id)
+    }
+
+    /// Every operation this build cannot interpret, in order.
+    pub fn carried(&self) -> impl Iterator<Item = &CarriedOperation> {
+        self.carried.iter()
+    }
+
+    /// How many operations are being carried without being understood.
+    ///
+    /// Worth showing a person. A non-zero count means part of this project was
+    /// made with a newer version of the application — true, actionable, and the
+    /// only honest thing to say about it.
+    #[must_use]
+    pub fn carried_count(&self) -> usize {
+        self.carried.len()
+    }
+
+    /// The carried operations another device has not seen.
+    ///
+    /// The counterpart of [`OperationLog::operations_since`], and the reason a
+    /// relay works: what this device cannot read, it can still be the reason
+    /// somebody else receives.
+    #[must_use]
+    pub fn carried_since(&self, other: &VersionVector) -> Vec<CarriedOperation> {
+        self.carried
+            .iter()
+            .filter(|operation| !other.has_seen(operation.id()))
+            .cloned()
+            .collect()
+    }
+
+    /// Re-reads carried operations, keeping the ones this build now understands.
+    ///
+    /// Returns how many were promoted. What an upgrade is for: an operation
+    /// that arrived from a newer build, and was carried because it could not be
+    /// read, becomes an ordinary part of the project the moment this build
+    /// learns its meaning. The user sees work appear that was theirs all along.
+    ///
+    /// Safe to call at any time and cheap when there is nothing to do, which is
+    /// why the natural place for it is immediately after a project is opened.
+    pub fn promote_carried(&mut self) -> usize {
+        let mut promoted: Vec<Operation> = Vec::new();
+        self.carried.retain(|carried| {
+            match crate::wire::read_carried(carried) {
+                Some(operation) => {
+                    promoted.push(operation);
+                    false
+                }
+                // Still beyond this build. Keep carrying it.
+                None => true,
+            }
+        });
+
+        let count = promoted.len();
+        for operation in promoted {
+            let key = operation.sort_key();
+            let position = self
+                .operations
+                .partition_point(|existing| existing.sort_key() < key);
+            // `seen` and `issued` already know about it: it was observed when it
+            // was carried, and an identity is not observed twice.
+            self.operations.insert(position, operation);
+        }
+        count
     }
 
     /// Creates an operation authored by a device against this log's current
@@ -1313,5 +1459,234 @@ mod tests {
         let report = log.merge(&held).expect("a merge");
         assert_eq!(report.already_present, 1);
         assert!(!report.needs_review());
+    }
+}
+
+#[cfg(test)]
+mod carrying {
+    #![allow(
+        clippy::expect_used,
+        clippy::panic,
+        reason = "a test that cannot build its own fixture should fail loudly"
+    )]
+
+    use super::*;
+    use crate::operation::MarkerId;
+    use crate::wire;
+
+    fn device(id: u64) -> DeviceId {
+        DeviceId::new(id)
+    }
+
+    fn remove_marker(id: u64) -> OperationPayload {
+        OperationPayload::RemoveMarker {
+            marker: MarkerId::new(id),
+        }
+    }
+
+    /// A message from a build that does not exist yet, carrying `count`
+    /// operations this one cannot read.
+    ///
+    /// Built by hand because the encoder cannot produce it — which is the whole
+    /// reason the decoder has to be tested against it.
+    fn from_a_newer_build(author: u64, count: u64) -> Vec<CarriedOperation> {
+        (1..=count)
+            .map(|sequence| {
+                let mut body = Vec::new();
+                body.extend_from_slice(&author.to_le_bytes());
+                body.extend_from_slice(&sequence.to_le_bytes());
+                body.extend_from_slice(&0_i64.to_le_bytes());
+                body.extend_from_slice(&0_u32.to_le_bytes());
+                body.extend_from_slice(&60_000_u16.to_le_bytes());
+                body.extend_from_slice(&0_u32.to_le_bytes());
+                CarriedOperation::new(
+                    OperationId::new(device(author), sequence),
+                    VersionVector::new(),
+                    0,
+                    60_000,
+                    body,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_relay_still_relays_after_being_closed_and_reopened() {
+        // The reason carrying belongs to the document rather than to the
+        // synchronisation layer. A device that held these in memory alone would
+        // carry a colleague's work until it quit, and then quietly stop — which
+        // is the same as losing it, later and less visibly.
+        let mut relay = OperationLog::new();
+        relay.carry(&from_a_newer_build(3, 4)).expect("carries");
+        assert_eq!(relay.carried_count(), 4);
+
+        // Closed and reopened. A project is its log, so this is what reopening
+        // one is: the same value, arrived at again.
+        let reopened = relay.clone();
+        assert_eq!(reopened.carried_count(), 4);
+
+        let asking = VersionVector::new();
+        assert_eq!(reopened.carried_since(&asking).len(), 4);
+    }
+
+    #[test]
+    fn carrying_records_it_as_seen_so_peers_stop_resending_it() {
+        // Only honest because the bytes are kept. A device that claimed to have
+        // seen an operation it did not hold would end the relay at itself while
+        // every peer believed the work had arrived.
+        let mut relay = OperationLog::new();
+        relay.carry(&from_a_newer_build(3, 2)).expect("carries");
+
+        let seen = relay.version_vector();
+        assert!(seen.has_seen(OperationId::new(device(3), 2)));
+        assert_eq!(relay.carried_since(seen).len(), 0);
+    }
+
+    #[test]
+    fn the_same_operation_carried_twice_is_held_once() {
+        let mut relay = OperationLog::new();
+        let batch = from_a_newer_build(3, 3);
+
+        assert_eq!(relay.carry(&batch).expect("carries"), 3);
+        assert_eq!(relay.carry(&batch).expect("carries"), 0);
+        assert_eq!(relay.carried_count(), 3);
+    }
+
+    #[test]
+    fn carrying_is_bounded_and_refuses_rather_than_discarding() {
+        // A build claiming to be newer could otherwise fill a device with
+        // operations it will never interpret. Refusing keeps the rule the
+        // outbox keeps: this is somebody's work, not a record of it.
+        let mut relay = OperationLog::new();
+        let sequences = u64::try_from(MAX_CARRIED).expect("fits");
+        relay
+            .carry(&from_a_newer_build(3, sequences))
+            .expect("carries");
+        assert_eq!(relay.carried_count(), MAX_CARRIED);
+
+        let one_more = from_a_newer_build(4, 1);
+        assert_eq!(relay.carry(&one_more), Err(ProjectError::CarriedFull));
+        assert_eq!(relay.carried_count(), MAX_CARRIED, "a refusal took some");
+    }
+
+    #[test]
+    fn an_upgrade_turns_carried_work_into_the_project_it_always_was() {
+        // Simulated the only way one build can: by building the state an
+        // upgrade leaves behind — entries this build can read, sitting in the
+        // carried store because the build that put them there could not.
+        let mut author = OperationLog::new();
+        let operations: Vec<Operation> = (1..=3)
+            .map(|index| {
+                let operation = author.author(device(1), 1_000, remove_marker(index));
+                author.append(operation.clone()).expect("appends");
+                operation
+            })
+            .collect();
+
+        let bytes = wire::encode(&operations).expect("encodes");
+        let carried: Vec<CarriedOperation> = wire::decode(&bytes)
+            .expect("decodes")
+            .entries()
+            .iter()
+            .filter_map(|entry| match entry {
+                crate::wire::Entry::Understood(operation) => Some(CarriedOperation::new(
+                    operation.id,
+                    operation.context.clone(),
+                    operation.timestamp_micros,
+                    60_000,
+                    wire::entry_body(operation).expect("encodes"),
+                )),
+                crate::wire::Entry::Unrecognised(_) => None,
+            })
+            .collect();
+
+        let mut upgraded = OperationLog::new();
+        upgraded.carry(&carried).expect("carries");
+        assert_eq!(upgraded.len(), 0);
+        assert_eq!(upgraded.carried_count(), 3);
+
+        assert_eq!(upgraded.promote_carried(), 3);
+        assert_eq!(upgraded.carried_count(), 0);
+        assert_eq!(upgraded.len(), 3);
+        assert_eq!(upgraded.state(), author.state());
+
+        // And running it again finds nothing to do, which is what makes it safe
+        // to run every time a project is opened.
+        assert_eq!(upgraded.promote_carried(), 0);
+    }
+
+    #[test]
+    fn an_operation_still_beyond_this_build_survives_a_promotion_attempt() {
+        let mut relay = OperationLog::new();
+        relay.carry(&from_a_newer_build(3, 2)).expect("carries");
+
+        assert_eq!(relay.promote_carried(), 0);
+        assert_eq!(relay.carried_count(), 2, "an operation was lost to a retry");
+    }
+
+    #[test]
+    fn a_promoted_operation_is_not_taken_in_again() {
+        // The same operation may arrive twice: once before an upgrade and once
+        // after. `holds` is what stops it being stored in both halves.
+        let mut author = OperationLog::new();
+        let operation = author.author(device(1), 1_000, remove_marker(1));
+        author.append(operation.clone()).expect("appends");
+
+        let carried = CarriedOperation::new(
+            operation.id,
+            operation.context.clone(),
+            operation.timestamp_micros,
+            60_000,
+            wire::entry_body(&operation).expect("encodes"),
+        );
+
+        let mut upgraded = OperationLog::new();
+        upgraded
+            .carry(core::slice::from_ref(&carried))
+            .expect("carries");
+        assert_eq!(upgraded.promote_carried(), 1);
+
+        assert_eq!(
+            upgraded
+                .carry(core::slice::from_ref(&carried))
+                .expect("carries"),
+            0
+        );
+        assert_eq!(upgraded.carried_count(), 0);
+        assert_eq!(upgraded.len(), 1);
+    }
+
+    #[test]
+    fn a_stale_device_in_the_middle_delivers_work_it_cannot_read() {
+        // Three devices, the middle one a version behind. What it cannot apply
+        // it still carries, so the third receives the first's work intact —
+        // which is the difference between a stale install being inconvenient
+        // and being a hole in the fleet.
+        let mut relay = OperationLog::new();
+        let mine = relay.author(device(2), 1_000, remove_marker(9));
+        relay.append(mine).expect("appends");
+        relay.carry(&from_a_newer_build(3, 5)).expect("carries");
+
+        let asking = VersionVector::new();
+        let message = wire::encode_all(
+            &relay.operations_since(&asking),
+            &relay.carried_since(&asking),
+        )
+        .expect("encodes");
+
+        let arrived = wire::decode(&message).expect("decodes");
+        assert_eq!(arrived.understood().count(), 1);
+        assert_eq!(arrived.unrecognised_count(), 5);
+
+        // And the third device holds everything the first sent, byte for byte.
+        let mut destination = OperationLog::new();
+        destination.merge(&arrived.to_operations()).expect("merges");
+        destination.carry(&arrived.to_carried()).expect("carries");
+        assert_eq!(destination.len(), 1);
+        assert_eq!(destination.carried_count(), 5);
+        assert_eq!(
+            destination.carried().next().map(CarriedOperation::bytes),
+            relay.carried().next().map(CarriedOperation::bytes)
+        );
     }
 }
