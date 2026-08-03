@@ -200,6 +200,7 @@ dependencies = [
  "prv-rt",
  "prv-security",
  "prv-settings",
+ "prv-sync",
  "prv-time",
  "prv-timeline",
  "prv-transport",

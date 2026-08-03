@@ -357,6 +357,51 @@ int main(void) {
           "a row past the end was read");
     prv_planner_destroy(shelf);
 
+    /* Where synchronisation is: a separate handle, because it belongs to an
+     * installation rather than to a project. */
+    PrvSync *sync = NULL;
+    CHECK(prv_sync_create(&sync) == PRV_OK, "the sync state would not start");
+
+    int32_t sync_state = 0;
+    CHECK(prv_sync_state(sync, &sync_state) == PRV_OK, "the sync state could not be read");
+    CHECK(sync_state == PRV_SYNC_OFFLINE, "a fresh installation was optimistic");
+
+    int32_t editing = 0, transferring = 0, needs_user = 0;
+    CHECK(prv_sync_flags(sync, &editing, &transferring, &needs_user) == PRV_OK,
+          "the sync flags could not be read");
+    CHECK(editing != 0, "editing was refused while offline");
+
+    /* An evening's work with no network, and no complaint about it. */
+    for (uint64_t sequence = 1; sequence <= 32; sequence += 1) {
+        CHECK(prv_sync_hold(sync, 1, sequence) == PRV_OK, "the outbox refused work");
+    }
+    uint64_t waiting = 0;
+    int32_t nearly_full = 0;
+    CHECK(prv_sync_waiting(sync, &waiting, &nearly_full) == PRV_OK, "the outbox could not be read");
+    CHECK(waiting == 32, "the outbox lost work");
+    CHECK(nearly_full == 0, "thirty-two edits were reported as a backlog");
+
+    /* A conflict stops the transfer and nothing else. */
+    CHECK(prv_sync_apply(sync, PRV_SYNC_EVENT_NETWORK_AVAILABLE) == PRV_OK, "event refused");
+    CHECK(prv_sync_apply(sync, PRV_SYNC_EVENT_WORK_TO_SEND) == PRV_OK, "event refused");
+    CHECK(prv_sync_apply(sync, PRV_SYNC_EVENT_CONFLICT_FOUND) == PRV_OK, "event refused");
+    CHECK(prv_sync_flags(sync, &editing, &transferring, &needs_user) == PRV_OK,
+          "the sync flags could not be read");
+    CHECK(needs_user != 0, "a conflict did not ask the user");
+    CHECK(transferring == 0, "a conflict did not stop the transfer");
+    CHECK(editing != 0, "an unanswered question stopped the user working");
+
+    /* Acknowledging twice costs nothing, which is what makes a lost reply safe. */
+    CHECK(prv_sync_acknowledge(sync, 1, 1) == PRV_OK, "acknowledgement refused");
+    CHECK(prv_sync_acknowledge(sync, 1, 1) == PRV_OK, "a repeated acknowledgement was refused");
+    CHECK(prv_sync_waiting(sync, &waiting, &nearly_full) == PRV_OK, "the outbox could not be read");
+    CHECK(waiting == 31, "acknowledging twice removed two entries");
+
+    /* An event this version does not define is refused, not guessed at. */
+    CHECK(prv_sync_apply(sync, 9999) == PRV_INVALID_ARGUMENT, "an undefined sync event applied");
+    prv_sync_destroy(sync);
+    prv_sync_destroy(NULL);
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");

@@ -315,7 +315,13 @@ did not have would be worse than no row at all.
 | Only the sound coming out now interrupts a performance | MP#8, MP#19, MP#24 | `prv-notify::Notice::concerns_the_sound_right_now` | `only_the_sound_coming_out_right_now_reaches_someone_on_stage`, `exactly_three_things_may_interrupt_a_set` | **Verified** |
 | A withheld notice is held, never discarded | MP#9, MP#24 | `prv-notify::Notifications::release` | `nothing_withheld_during_a_set_is_thrown_away` | **Verified** |
 | Repetition is summarised with a count | MP#10, MP#24 | `prv-notify::Pending::occurrences` | `forty_analysed_tracks_are_one_notice_with_a_count`, `a_question_is_never_merged_away` | **Verified** |
-| Cloud transport and UI | MP#24, MP#17 | — | — | Not started |
+| The synchronisation state reaches the host | MP#24, MP#17 | `prv-ffi::sync` | `editing_is_allowed_in_every_state_this_boundary_can_reach`, `a_pause_is_lifted_by_the_user_and_by_nothing_else` | **Verified** |
+| Offline is shown as a state, not an error | MP#24, MP#17 | `PRVUI::SyncModel` | `offline is a state, not an error, and editing works in it`, `work done offline is counted, and the count is not a warning` | **Verified** |
+| A backlog is warned about before it refuses | MP#24, MP#10 | `PRVUI::SyncModel::shouldWarnAboutBacklog` | `one badge at a time, most pressing first` | **Verified** |
+| One badge at a time, most pressing first | MP#10, MP#17 | `PRVUI::SyncModel::badgeKey` | `badges do not stack` | **Verified** |
+| A consent screen tells both truths | MP#26, MP#17 | `PRVUI::ConsentModel` | `crash reporting alone does not claim the user's work is being sent`, `agreeing to something that sends work says so` | **Verified** |
+| Nothing agreed to is hidden from the user | MP#26, MP#17 | `PRVUI::ConsentModel` | `every purpose is listed whether or not it is on` | **Verified** |
+| Cloud transport | MP#24 | — | the host owns the socket; ADR-0001 keeps it out of the core | Not started |
 
 ## On the specification corpus itself
 

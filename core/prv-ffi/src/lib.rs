@@ -98,6 +98,7 @@ pub mod mapping;
 pub mod planning;
 pub mod policy;
 pub mod status;
+pub mod sync;
 
 pub use analysis::Analysis;
 pub use collection::Collection;
@@ -107,6 +108,7 @@ pub use experience::Experience;
 pub use planning::Planner;
 pub use policy::Policy;
 pub use status::Status;
+pub use sync::Sync;
 
 #[cfg(test)]
 mod tests {

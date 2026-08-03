@@ -14,6 +14,16 @@ The protocol is two messages and three steps: a device sends its version vector,
 the other side answers with the operations that vector has not seen, and each
 merges what it received. Both may do it at once and neither is authoritative.
 
+The synchronisation state machine crosses the boundary too — `prv_sync_create`
+and its five companions — because "connected" is the smallest part of what that
+state means. Editing is permitted in every state, a conflict stops the transfer
+and nothing else, and a pause is lifted only by the user: rules a host would
+otherwise reimplement, differently, eventually.
+
+Above it, `PRVUI` holds the two models a person actually meets: a consent screen
+that tells both truths about what leaves the device, and a status model in which
+offline is a state rather than an error.
+
 What does not exist is anything that moves bytes. That is ADR-0001 working rather
 than a gap — the core decides and the host acts — and it is why the same four
 calls serve a cloud service, a local network, a memory stick and a file attached

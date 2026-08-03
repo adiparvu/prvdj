@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 9
+#define PRV_ABI_MINOR 10
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -99,6 +99,39 @@ typedef enum PrvComponent {
        int32_t every function here takes. Never returned, never compared. */
     PRV_COMPONENT_FORCE_SIGNED = -1,
 } PrvComponent;
+
+/* Where synchronisation is. Numbered from one so that zero is never a
+         * state: a host reading an uninitialised value gets something it can
+         * recognise as wrong rather than "offline", which is plausible and
+         * therefore the dangerous answer. */
+typedef enum PrvSyncState {
+    PRV_SYNC_OFFLINE = 1,
+    PRV_SYNC_IDLE = 2,
+    PRV_SYNC_SENDING = 3,
+    PRV_SYNC_RECEIVING = 4,
+    PRV_SYNC_CONFLICTED = 5,
+    PRV_SYNC_PAUSED = 6,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_SYNC_STATE_FORCE_SIGNED = -1,
+} PrvSyncState;
+
+/* Something that happened to synchronisation. A host reports these; it
+         * does not decide what they mean. */
+typedef enum PrvSyncEvent {
+    PRV_SYNC_EVENT_NETWORK_AVAILABLE = 1,
+    PRV_SYNC_EVENT_NETWORK_LOST = 2,
+    PRV_SYNC_EVENT_WORK_TO_SEND = 3,
+    PRV_SYNC_EVENT_WORK_ARRIVED = 4,
+    PRV_SYNC_EVENT_TRANSFER_FINISHED = 5,
+    PRV_SYNC_EVENT_CONFLICT_FOUND = 6,
+    PRV_SYNC_EVENT_CONFLICT_RESOLVED = 7,
+    PRV_SYNC_EVENT_PAUSE = 8,
+    PRV_SYNC_EVENT_RESUME = 9,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_SYNC_EVENT_FORCE_SIGNED = -1,
+} PrvSyncEvent;
 
 /* What a user may agree to. Nothing is agreed to by default. */
 typedef enum PrvPurpose {
@@ -195,6 +228,11 @@ typedef struct PrvDelivery PrvDelivery;
 
 /* How the application behaves, and what it has queued to say. */
 typedef struct PrvExperience PrvExperience;
+
+/* Where synchronisation is, and what has not gone yet. Belongs to an
+ * installation rather than to a project: a user with three projects open is
+ * not offline three times. */
+typedef struct PrvSync PrvSync;
 
 /*
  * Reads audio for one track.
@@ -536,6 +574,77 @@ int32_t prv_engine_promote_carried(PrvEngine *engine, uint64_t *out_promoted);
  * one open while replanning.
  */
 int32_t prv_planner_create(PrvPlanner **out_planner);
+
+/*
+ * Creates a synchronisation state: offline, with nothing waiting.
+ *
+ * Offline rather than idle, because that is the state a device starts in
+ * before anything has confirmed otherwise. Assuming the optimistic one
+ * would make the first seconds of every launch a lie.
+ */
+int32_t prv_sync_create(PrvSync **out_sync);
+
+/*
+ * Destroys it. NULL is accepted and does nothing.
+ */
+void prv_sync_destroy(PrvSync *sync);
+
+/*
+ * Reports something that happened, by its PrvSyncEvent code.
+ *
+ * Total: every state and event pair has an answer, and a pair that means
+ * nothing leaves the state alone rather than failing. Events arrive from
+ * a network and from a user at the same time, so "that cannot happen"
+ * is a claim about timing that no amount of care makes true.
+ *
+ * A code this version does not define is refused rather than guessed at.
+ */
+int32_t prv_sync_apply(PrvSync *sync, int32_t event_code);
+
+/*
+ * Reads the current state, as a PrvSyncState.
+ */
+int32_t prv_sync_state(const PrvSync *sync, int32_t *out_state);
+
+/*
+ * Three questions a host asks before drawing anything.
+ *
+ * out_editing_allowed is non-zero in every state, and worth asking
+ * anyway: a host that asks is a host that was considering disabling
+ * something, and the answer is that offline is the normal case rather
+ * than a mode with fewer features.
+ */
+int32_t prv_sync_flags(const PrvSync *sync, int32_t *out_editing_allowed,
+                       int32_t *out_transferring, int32_t *out_needs_the_user);
+
+/*
+ * Records that an operation was authored here and has gone nowhere yet.
+ *
+ * Refuses when full rather than discarding its oldest entry, which is the
+ * opposite of what an audit log does with the same problem: one holds a
+ * record of what happened, and this holds the work itself.
+ */
+int32_t prv_sync_hold(PrvSync *sync, uint64_t device, uint64_t sequence);
+
+/*
+ * Records that an operation reached somewhere else.
+ *
+ * Acknowledging something already acknowledged does nothing, which is
+ * what makes a lost reply safe: the client sends again, and the second
+ * delivery is recognised rather than corrupting anything.
+ */
+int32_t prv_sync_acknowledge(PrvSync *sync, uint64_t device, uint64_t sequence);
+
+/*
+ * How much work is waiting to leave, and whether that is near the bound.
+ *
+ * Reaching the bound means a session has been offline for a very long
+ * time or a server has been refusing everything, and the user needs to
+ * know either way — which is why the warning exists before the refusal
+ * rather than after it.
+ */
+int32_t prv_sync_waiting(const PrvSync *sync, uint64_t *out_waiting,
+                         int32_t *out_nearly_full);
 
 /*
  * Ranks the records that sit best after — or before — a given one.

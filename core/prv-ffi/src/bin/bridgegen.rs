@@ -129,6 +129,19 @@ fn declarations() -> Vec<Declaration> {
     ) -> i32 = prv_ffi::exports::prv_engine_sync_merge;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_carried_count;
+    let _: unsafe extern "C" fn(*mut *mut prv_ffi::Sync) -> i32 = prv_ffi::exports::prv_sync_create;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Sync) = prv_ffi::exports::prv_sync_destroy;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Sync, i32) -> i32 = prv_ffi::exports::prv_sync_apply;
+    let _: unsafe extern "C" fn(*const prv_ffi::Sync, *mut i32) -> i32 =
+        prv_ffi::exports::prv_sync_state;
+    let _: unsafe extern "C" fn(*const prv_ffi::Sync, *mut i32, *mut i32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_sync_flags;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Sync, u64, u64) -> i32 =
+        prv_ffi::exports::prv_sync_hold;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Sync, u64, u64) -> i32 =
+        prv_ffi::exports::prv_sync_acknowledge;
+    let _: unsafe extern "C" fn(*const prv_ffi::Sync, *mut u64, *mut i32) -> i32 =
+        prv_ffi::exports::prv_sync_waiting;
     let _: unsafe extern "C" fn(*mut prv_ffi::Planner, u64, i32, u64, *mut u64) -> i32 =
         prv_ffi::exports::prv_planner_neighbours;
     let _: unsafe extern "C" fn(*const prv_ffi::Planner, u64, *mut u64, *mut f32, *mut i32) -> i32 =
@@ -544,6 +557,82 @@ fn declarations() -> Vec<Declaration> {
                 "A separate handle from the engine, deliberately. A library and a plan",
                 "are not a project: a host may plan with no project open, and may keep",
                 "one open while replanning.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_create(PrvSync **out_sync)",
+            doc: &[
+                "Creates a synchronisation state: offline, with nothing waiting.",
+                "",
+                "Offline rather than idle, because that is the state a device starts in",
+                "before anything has confirmed otherwise. Assuming the optimistic one",
+                "would make the first seconds of every launch a lie.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_sync_destroy(PrvSync *sync)",
+            doc: &["Destroys it. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_apply(PrvSync *sync, int32_t event_code)",
+            doc: &[
+                "Reports something that happened, by its PrvSyncEvent code.",
+                "",
+                "Total: every state and event pair has an answer, and a pair that means",
+                "nothing leaves the state alone rather than failing. Events arrive from",
+                "a network and from a user at the same time, so \"that cannot happen\"",
+                "is a claim about timing that no amount of care makes true.",
+                "",
+                "A code this version does not define is refused rather than guessed at.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_state(const PrvSync *sync, int32_t *out_state)",
+            doc: &["Reads the current state, as a PrvSyncState."],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_flags(const PrvSync *sync, int32_t *out_editing_allowed, \
+                        int32_t *out_transferring, int32_t *out_needs_the_user)",
+            doc: &[
+                "Three questions a host asks before drawing anything.",
+                "",
+                "out_editing_allowed is non-zero in every state, and worth asking",
+                "anyway: a host that asks is a host that was considering disabling",
+                "something, and the answer is that offline is the normal case rather",
+                "than a mode with fewer features.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_hold(PrvSync *sync, uint64_t device, uint64_t sequence)",
+            doc: &[
+                "Records that an operation was authored here and has gone nowhere yet.",
+                "",
+                "Refuses when full rather than discarding its oldest entry, which is the",
+                "opposite of what an audit log does with the same problem: one holds a",
+                "record of what happened, and this holds the work itself.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_acknowledge(PrvSync *sync, uint64_t device, \
+                        uint64_t sequence)",
+            doc: &[
+                "Records that an operation reached somewhere else.",
+                "",
+                "Acknowledging something already acknowledged does nothing, which is",
+                "what makes a lost reply safe: the client sends again, and the second",
+                "delivery is recognised rather than corrupting anything.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_sync_waiting(const PrvSync *sync, uint64_t *out_waiting, \
+                        int32_t *out_nearly_full)",
+            doc: &[
+                "How much work is waiting to leave, and whether that is near the bound.",
+                "",
+                "Reaching the bound means a session has been offline for a very long",
+                "time or a server has been refusing everything, and the user needs to",
+                "know either way — which is why the warning exists before the refusal",
+                "rather than after it.",
             ],
         },
         Declaration {
@@ -1166,6 +1255,7 @@ fn emit_types(out: &mut String) {
     );
 
     emit_score_enums(out);
+    emit_sync_enums(out);
     emit_domain_enums(out);
 
     emit_enum(
@@ -1292,6 +1382,41 @@ fn emit_experience_enums(out: &mut String) {
 /// Its own function rather than part of the domain block: a component is
 /// something a *judgement* is made of, and the domain enums are things a user
 /// agrees to or pays for. Splitting them keeps either free to grow.
+/// The vocabulary of synchronisation.
+fn emit_sync_enums(out: &mut String) {
+    emit_enum(
+        out,
+        "/* Where synchronisation is. Numbered from one so that zero is never a\n         * state: a host reading an uninitialised value gets something it can\n         * recognise as wrong rather than \"offline\", which is plausible and\n         * therefore the dangerous answer. */",
+        "PrvSyncState",
+        "PRV_SYNC_STATE_FORCE_SIGNED",
+        prv_sync::SyncState::ALL.iter().map(|state| {
+            (
+                format!(
+                    "PRV_SYNC_{}",
+                    state.key().trim_start_matches("sync.").to_uppercase()
+                ),
+                prv_ffi::sync::state_code(*state),
+            )
+        }),
+    );
+
+    emit_enum(
+        out,
+        "/* Something that happened to synchronisation. A host reports these; it\n         * does not decide what they mean. */",
+        "PrvSyncEvent",
+        "PRV_SYNC_EVENT_FORCE_SIGNED",
+        prv_sync::SyncEvent::ALL.iter().map(|event| {
+            (
+                format!(
+                    "PRV_SYNC_EVENT_{}",
+                    event.key().trim_start_matches("sync.event.").to_uppercase()
+                ),
+                prv_ffi::sync::event_code(*event),
+            )
+        }),
+    );
+}
+
 fn emit_score_enums(out: &mut String) {
     emit_enum(
         out,
@@ -1405,6 +1530,11 @@ typedef struct PrvDelivery PrvDelivery;
 
 /* How the application behaves, and what it has queued to say. */
 typedef struct PrvExperience PrvExperience;
+
+/* Where synchronisation is, and what has not gone yet. Belongs to an
+ * installation rather than to a project: a user with three projects open is
+ * not offline three times. */
+typedef struct PrvSync PrvSync;
 
 ",
     );

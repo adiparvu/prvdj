@@ -723,6 +723,51 @@ beats per minute. A tempo is stored as microseconds per beat, so 132 comes back
 as very nearly 132, and the test was measuring that rounding rather than the
 property it meant to check. Now both sides read the tempo from the same place.
 
+### Sprint 42 — the cloud, as a person sees it
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-ffi::sync` | Completed | Verified | The state machine and the outbox, at the boundary |
+| `PrvSyncState`, `PrvSyncEvent` | Completed | Verified | Generated from the core's own vocabulary |
+| `PRVCore.Sync`, `SyncSnapshot` | Completed | **Verified on Linux** | One consistent reading rather than three reads that can straddle a change |
+| `PRVUI::ConsentModel` | Completed | **Verified on Linux** | Two questions, because a purpose can leave the device carrying nothing the user made |
+| `PRVUI::SyncModel` | Completed | **Verified on Linux** | Offline is a state, not an error |
+| ABI minor version 1.10 | Completed | Verified | Calls added, nothing existing moved |
+
+**Why the state machine crosses at all**, when the bytes already do: "connected"
+is the smallest part of what synchronisation state means. The machine holds rules
+with teeth — editing is permitted in every state, permanently; a conflict stops
+the transfer and nothing else; a pause is lifted only by the user and never by a
+network event. A host that modelled synchronisation itself would reimplement
+those, differently, eventually. So the host reports events and the core decides
+what they mean.
+
+**The consent screen carries two questions rather than one.** A purpose can leave
+the device without carrying anything the user made — crash reporting is the plain
+example — and a screen that collapses those misleads whichever way it collapses
+them. Built on "does anything leave the device" alone, it tells a user their
+recordings are being sent when they are not. Built on "does this send content"
+alone, it hides an upload. This is the distinction a test found in Sprint 38, now
+built into the surface that has to say it out loud.
+
+**Offline is a state, not an error.** It is normal, editing works, and the only
+thing worth saying is that some work has not travelled yet — a count, not a
+warning. The one thing that *is* a warning arrives long before anything breaks: a
+backlog near its bound means a very long session offline or a server refusing
+everything, and a user told at the refusal is told too late.
+
+**One badge at a time, most pressing first.** A status area that stacks four
+notices is a status area people stop reading, so the model picks one and the
+quieter facts stay readable underneath it.
+
+**A wildcard the compiler forced, and the test that replaces it.** `SyncState`
+and `SyncEvent` are `non_exhaustive`, so a mapping in another crate cannot be
+exhaustive the way the wire format's payload mapping is. The arms map an unknown
+variant to zero rather than to a plausible-looking state, and a test walks
+`SyncState::ALL` and `SyncEvent::ALL` asserting every one has a non-zero code.
+An unmapped variant is a failing test rather than a silent lie on somebody's
+screen. `SyncEvent::ALL` was added for exactly that purpose.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

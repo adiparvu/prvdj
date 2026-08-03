@@ -125,6 +125,25 @@ pub enum SyncEvent {
 }
 
 impl SyncEvent {
+    /// Every event.
+    ///
+    /// Exists so that anything enumerating them — a boundary's code mapping, a
+    /// generated header, a localisation table — can be walked by a test rather
+    /// than kept in step by hand. The enum is `non_exhaustive`, so a mapping in
+    /// another crate cannot be exhaustive; walking this is what replaces the
+    /// compiler's check.
+    pub const ALL: [Self; 9] = [
+        Self::NetworkAvailable,
+        Self::NetworkLost,
+        Self::WorkToSend,
+        Self::WorkArrived,
+        Self::TransferFinished,
+        Self::ConflictFound,
+        Self::ConflictResolved,
+        Self::Pause,
+        Self::Resume,
+    ];
+
     /// A stable identifier, for storage and localisation.
     #[must_use]
     pub const fn key(self) -> &'static str {

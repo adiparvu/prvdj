@@ -26,6 +26,7 @@ use crate::mapping::event_from_code;
 use crate::planning::Planner;
 use crate::policy::Policy;
 use crate::status::Status;
+use crate::sync::Sync;
 
 /// The version of this boundary, packed as `major << 16 | minor << 8 | patch`.
 ///
@@ -578,6 +579,172 @@ pub unsafe extern "C" fn prv_engine_promote_carried(
         let promoted = unsafe { as_mut(engine) }?.promote_carried()?;
         // SAFETY: as above.
         *unsafe { as_mut(out_promoted) }? = promoted;
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// The synchronisation state of an installation
+//
+// A separate handle from the engine, because this belongs to an installation
+// rather than to a project. A user with three projects open is not offline three
+// times, and pausing synchronisation pauses it for the application rather than
+// for whichever window happens to be focused.
+// ---------------------------------------------------------------------------
+
+/// Creates a synchronisation state, offline with nothing waiting.
+///
+/// # Safety
+///
+/// `out_sync` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_create(out_sync: *mut *mut Sync) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_sync) }?;
+        *slot = core::ptr::null_mut();
+        *slot = Box::into_raw(Box::new(Sync::new()));
+        Ok(())
+    })
+    .code()
+}
+
+/// Destroys it. NULL is accepted and does nothing.
+///
+/// # Safety
+///
+/// `sync` must be a pointer from [`prv_sync_create`], not yet destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_destroy(sync: *mut Sync) {
+    if sync.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(sync) });
+        Status::Ok
+    });
+}
+
+/// Reports something that happened, by its `PrvSyncEvent` code.
+///
+/// A code this version does not define is refused rather than guessed at:
+/// guessing would move a user's synchronisation into a state nobody asked for.
+///
+/// # Safety
+///
+/// `sync` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_apply(sync: *mut Sync, event_code: i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(sync) }?.apply(event_code)
+    })
+    .code()
+}
+
+/// Reads the current state, as a `PrvSyncState`.
+///
+/// # Safety
+///
+/// `sync` must be live and `out_state` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_state(sync: *const Sync, out_state: *mut i32) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let state = unsafe { as_ref(sync) }?.state();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_state) }? = state;
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether the user may go on editing.
+///
+/// Always non-zero, in every state, and worth asking anyway: a host that asks is
+/// a host that was considering disabling something, and the answer it gets is
+/// that offline is the normal case rather than a mode with fewer features.
+///
+/// # Safety
+///
+/// `sync` must be live and each out-pointer writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_flags(
+    sync: *const Sync,
+    out_editing_allowed: *mut i32,
+    out_transferring: *mut i32,
+    out_needs_the_user: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let sync = unsafe { as_ref(sync) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_editing_allowed) }? = i32::from(sync.editing_is_allowed());
+        // SAFETY: as above.
+        *unsafe { as_mut(out_transferring) }? = i32::from(sync.is_transferring());
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needs_the_user) }? = i32::from(sync.needs_the_user());
+        Ok(())
+    })
+    .code()
+}
+
+/// Records that an operation was authored here and has gone nowhere yet.
+///
+/// # Safety
+///
+/// `sync` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_hold(sync: *mut Sync, device: u64, sequence: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(sync) }?.hold(device, sequence)
+    })
+    .code()
+}
+
+/// Records that an operation reached somewhere else.
+///
+/// Acknowledging something already acknowledged does nothing, which is what
+/// makes a lost reply safe.
+///
+/// # Safety
+///
+/// `sync` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_acknowledge(sync: *mut Sync, device: u64, sequence: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(sync) }?.acknowledge(device, sequence);
+        Ok(())
+    })
+    .code()
+}
+
+/// How much work is waiting to leave, and whether that is close to the bound.
+///
+/// Reaching the bound means a session has been offline for a very long time or a
+/// server has been refusing everything, and the user needs to know either way —
+/// which is why the warning exists before the refusal rather than after it.
+///
+/// # Safety
+///
+/// `sync` must be live and each out-pointer writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_sync_waiting(
+    sync: *const Sync,
+    out_waiting: *mut u64,
+    out_nearly_full: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let sync = unsafe { as_ref(sync) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_waiting) }? = sync.waiting();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_nearly_full) }? = i32::from(sync.is_nearly_full());
         Ok(())
     })
     .code()

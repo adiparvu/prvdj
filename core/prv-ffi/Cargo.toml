@@ -31,6 +31,7 @@ prv-notify = { path = "../prv-notify" }
 prv-project = { path = "../prv-project" }
 prv-render = { path = "../prv-render" }
 prv-security = { path = "../prv-security" }
+prv-sync = { path = "../prv-sync" }
 prv-settings = { path = "../prv-settings" }
 prv-rt = { path = "../prv-rt" }
 prv-time = { path = "../prv-time" }
