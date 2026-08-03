@@ -185,6 +185,84 @@ int main(void) {
     status = prv_engine_render(engine, block, 2, 1024);
     CHECK(status == PRV_INVALID_ARGUMENT, "an oversized block was accepted");
 
+    /* Synchronisation: two projects, and only bytes between them.
+     *
+     * This is the shape a real host uses. The core never opens a socket — it
+     * produces bytes and reads bytes, and what carries them is the host's
+     * business. */
+    PrvEngine *peer = NULL;
+    CHECK(prv_engine_create(48000, 2, 512, &peer) == PRV_OK, "the peer would not start");
+    CHECK(prv_engine_set_device(peer, 2) == PRV_OK, "the peer would not take an identity");
+    CHECK(prv_engine_set_device(peer, 0) == PRV_INVALID_ARGUMENT,
+          "zero was accepted as a device identity");
+
+    /* Asking with nowhere to put the answer reports the size. */
+    uint64_t needed = 0;
+    CHECK(prv_engine_sync_state(peer, NULL, 0, &needed) == PRV_BUFFER_TOO_SMALL,
+          "a zero-length buffer was reported as sufficient");
+    CHECK(needed > 0, "an empty project claimed to have no state at all");
+
+    uint8_t peer_state[256];
+    CHECK(needed <= sizeof peer_state, "the peer's state does not fit a small buffer");
+    CHECK(prv_engine_sync_state(peer, peer_state, sizeof peer_state, &needed) == PRV_OK,
+          "the peer's state could not be read");
+
+    uint64_t message_len = 0;
+    CHECK(prv_engine_sync_prepare(engine, peer_state, needed, &message_len) == PRV_OK,
+          "the message could not be prepared");
+    CHECK(message_len > 0, "a project with a placement in it had nothing to send");
+
+    uint8_t outbound[4096];
+    uint64_t written = 0;
+    CHECK(message_len <= sizeof outbound, "the message does not fit the test's buffer");
+    CHECK(prv_engine_sync_outbound(engine, outbound, sizeof outbound, &written) == PRV_OK,
+          "the message could not be copied out");
+    CHECK(written == message_len, "the message changed size between being sized and sent");
+
+    uint64_t applied = 0, already = 0, conflicts = 0, carried = 0;
+    CHECK(prv_engine_sync_merge(peer, outbound, written, &applied, &already, &conflicts,
+                                &carried) == PRV_OK,
+          "the peer would not merge the message");
+    CHECK(applied > 0, "nothing arrived");
+    CHECK(conflicts == 0, "an exchange between an empty project and a full one conflicted");
+    CHECK(carried == 0, "this build could not read a message it wrote itself");
+
+    int64_t peer_duration = 0;
+    CHECK(prv_engine_duration(peer, &peer_duration) == PRV_OK,
+          "the peer's duration could not be read");
+    CHECK(peer_duration == duration,
+          "the peer's project is not the same length as the one it received");
+
+    /* A network that loses a reply makes a client send again. The second
+     * delivery is recognised rather than duplicated. */
+    CHECK(prv_engine_sync_merge(peer, outbound, written, &applied, &already, &conflicts,
+                                &carried) == PRV_OK,
+          "a repeated delivery was refused");
+    CHECK(applied == 0, "a repeated delivery applied work twice");
+    CHECK(already > 0, "a repeated delivery was not recognised as one");
+
+    /* And the peer now has nothing to ask for. */
+    CHECK(prv_engine_sync_state(peer, peer_state, sizeof peer_state, &needed) == PRV_OK,
+          "the peer's state could not be read after merging");
+    CHECK(prv_engine_sync_prepare(engine, peer_state, needed, &message_len) == PRV_OK,
+          "a second exchange could not be prepared");
+    CHECK(message_len > 0, "an empty message is still a message");
+    CHECK(message_len < written, "the second exchange sent as much as the first");
+
+    /* Bytes that are not a message are refused rather than guessed at. */
+    CHECK(prv_engine_sync_merge(peer, (const uint8_t *)"not a message at all", 20, &applied,
+                                &already, &conflicts, &carried) == PRV_INVALID_ARGUMENT,
+          "arbitrary bytes were accepted as a project");
+    CHECK(prv_engine_sync_prepare(engine, (const uint8_t *)"nor is this", 11, &message_len)
+              == PRV_INVALID_ARGUMENT,
+          "arbitrary bytes were accepted as a version vector");
+
+    /* An identity cannot be changed underneath a log that has already used it. */
+    CHECK(prv_engine_set_device(peer, 3) == PRV_INVALID_STATE,
+          "the peer changed identity after it had already merged work");
+
+    prv_engine_destroy(peer);
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");

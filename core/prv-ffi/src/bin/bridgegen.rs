@@ -110,6 +110,23 @@ fn declarations() -> Vec<Declaration> {
         prv_ffi::exports::prv_engine_render;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut i32) -> i32 =
         prv_ffi::exports::prv_engine_render_was_complete;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, u64) -> i32 =
+        prv_ffi::exports::prv_engine_set_device;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u8, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_sync_state;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, *const u8, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_sync_prepare;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u8, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_sync_outbound;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Engine,
+        *const u8,
+        u64,
+        *mut u64,
+        *mut u64,
+        *mut u64,
+        *mut u64,
+    ) -> i32 = prv_ffi::exports::prv_engine_sync_merge;
     let _: unsafe extern "C" fn(*mut *mut prv_ffi::Planner) -> i32 =
         prv_ffi::exports::prv_planner_create;
     let _: unsafe extern "C" fn(*mut prv_ffi::Planner) = prv_ffi::exports::prv_planner_destroy;
@@ -415,6 +432,73 @@ fn declarations() -> Vec<Declaration> {
                 "",
                 "Zero means some audio was missing. That is worth showing a user, but it",
                 "is not an error: the render happened and what was there is correct.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_set_device(PrvEngine *engine, uint64_t device)",
+            doc: &[
+                "Declares which device this is.",
+                "",
+                "An operation is named by a device plus a number that device allocates",
+                "itself, which is what lets two machines edit the same project offline",
+                "without colliding. The device part must be stable for this",
+                "installation and distinct from every other — facts about the machine,",
+                "which is why the host supplies them.",
+                "",
+                "Call it before the project holds any operations. A host that never",
+                "calls it gets a default that is right for one machine and wrong for a",
+                "fleet — and wrong loudly: two devices sharing an identity produce",
+                "operations with the same name and different contents, which a merge",
+                "reports as a conflict rather than resolving by luck.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_sync_state(const PrvEngine *engine, uint8_t *into, \
+                        uint64_t capacity, uint64_t *out_needed)",
+            doc: &[
+                "Writes what this project has seen, for a peer to answer.",
+                "",
+                "The core never opens a socket. It produces bytes and reads bytes; the",
+                "host carries them, over whatever it likes.",
+                "",
+                "Pass NULL and a capacity of zero to learn the size, then allocate once.",
+                "out_needed is written whether or not the buffer fitted.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_sync_prepare(PrvEngine *engine, \
+                        const uint8_t *peer_state, uint64_t peer_state_len, \
+                        uint64_t *out_needed)",
+            doc: &[
+                "Prepares the operations a peer has not seen, and reports their size.",
+                "",
+                "Nothing is copied out here: the message is built once and held, so a",
+                "host learns the exact size before allocating. prv_engine_sync_outbound",
+                "then hands it over, and may be called again if the buffer was too",
+                "small.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_sync_outbound(const PrvEngine *engine, uint8_t *into, \
+                        uint64_t capacity, uint64_t *out_needed)",
+            doc: &["Copies out the message prv_engine_sync_prepare built."],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_sync_merge(PrvEngine *engine, const uint8_t *bytes, \
+                        uint64_t len, uint64_t *out_applied, uint64_t *out_already_present, \
+                        uint64_t *out_conflicts, uint64_t *out_carried)",
+            doc: &[
+                "Merges a message from a peer.",
+                "",
+                "The four counts mean four different things: work arrived, work was",
+                "already here, work disagrees and needs a person, and work could not be",
+                "read because a newer build made it.",
+                "",
+                "The last is not a failure. A message carrying operations this build",
+                "cannot interpret can still be passed on byte for byte, so a device on",
+                "an older version relays rather than blocking. What it cannot do is",
+                "show them, so tell the user that some of the project was made with a",
+                "newer version of the app.",
             ],
         },
         Declaration {

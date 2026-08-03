@@ -2,7 +2,37 @@
 
 Governed by Master Prompt #24. Model fixed by
 [ADR-0003](../adr/0003-project-document-and-persistence.md).
-Status: **Not started** — Phase 5.
+Status: **Partial** — the protocol is built and tested; the transport is not.
+
+## What exists
+
+The wire format and the four boundary calls that use it. `prv-project::wire`
+encodes and decodes messages; `prv_engine_sync_state`, `prv_engine_sync_prepare`,
+`prv_engine_sync_outbound` and `prv_engine_sync_merge` let a host exchange them.
+
+The protocol is two messages and three steps: a device sends its version vector,
+the other side answers with the operations that vector has not seen, and each
+merges what it received. Both may do it at once and neither is authoritative.
+
+What does not exist is anything that moves bytes. That is ADR-0001 working rather
+than a gap — the core decides and the host acts — and it is why the same four
+calls serve a cloud service, a local network, a memory stick and a file attached
+to an email without knowing which is which.
+
+Three properties are worth naming because they were designed rather than
+inherited:
+
+- **A build that cannot read an operation still carries it.** Unrecognised
+  entries are kept byte for byte, reported, and passed on unchanged, so an
+  install a version behind is a relay rather than a hole in the fleet.
+- **Nothing half-understood is ever applied.** An entry carrying a payload this
+  build knows plus a field it does not is treated as not understood, rather than
+  stored stripped of its author's meaning and relayed as though it were theirs.
+- **Untrusted bytes cannot make the core allocate.** Every count is checked
+  against the bytes actually present before anything is reserved.
+
+The format's limits are recorded in
+[17-known-limitations.md](17-known-limitations.md), sections 6 to 8.
 
 ## Decisions already fixed
 

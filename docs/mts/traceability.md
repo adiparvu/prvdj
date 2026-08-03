@@ -149,6 +149,18 @@ did not have would be worse than no row at all.
 | History stays legible rather than being truncated | MP#24, MP#9 | `prv-sync::backup::thin` | `a_month_of_work_stays_legible_rather_than_becoming_a_wall`, `everything_from_the_last_hour_survives` | **Verified** |
 | A restore point the user named is never discarded | MP#9, MP#24 | `prv-sync::PointKind::Deliberate` | `a_point_somebody_named_is_never_discarded`, `the_named_points_alone_may_exceed_the_bound` | **Verified** |
 | Thinning is safe to run on every save | MP#24 | `prv-sync::backup::thin` | `thinning_twice_changes_nothing` | **Verified** |
+| A project travels as bytes, not as a copy | MP#24, ADR-0003 | `prv-project::wire` | `every_payload_survives_the_journey_intact`, `two_laptops_a_night_apart_and_only_bytes_between_them` | **Verified** |
+| A shipped operation number never changes meaning | ADR-0003 | `prv-project::wire` | `every_payload_keeps_the_number_it_was_given`, `no_two_payloads_share_a_number` | **Verified** |
+| A newer build's work is carried, never dropped | MP#24, ADR-0003 | `prv-project::wire::Unrecognised` | `an_operation_from_a_newer_build_is_carried_rather_than_dropped`, `a_message_a_build_cannot_read_still_arrives_at_the_build_that_can` | **Verified** |
+| A half-understood edit is never applied | MP#24, ADR-0003 | `prv-project::wire` | `an_entry_a_newer_build_extended_is_not_half_applied`, `a_payload_a_newer_build_extended_is_not_half_applied` | **Verified** |
+| The format can grow without a flag day | ADR-0003 | `prv-project::wire` | `a_header_field_from_a_newer_build_is_stepped_over_and_kept`, `a_higher_minor_version_is_read_and_a_higher_major_is_not` | **Verified** |
+| Untrusted bytes cannot make the core allocate | MP#26 | `prv-project::wire::plausible` | `a_count_larger_than_the_bytes_present_is_refused_without_allocating`, `truncation_at_every_length_is_refused_rather_than_accepted` | **Verified** |
+| A damaged message cannot make a reader misbehave | MP#26 | `prv-project::wire` | `no_single_altered_byte_makes_a_reader_misbehave` | **Verified** |
+| The same state always encodes to the same bytes | MP#24 | `prv-project::VersionVector::entries` | `the_same_operations_always_produce_the_same_bytes` | **Verified** |
+| Two devices never name the same placement | MP#24, ADR-0003 | `prv-ffi::Engine::allocate_placements` | `two_devices_never_name_the_same_placement`, `both sides end up with the same project, and neither is in charge` | **Verified** |
+| A device identity is declared by the host | MP#24, ADR-0001 | `prv-ffi::Engine::set_device` | `an identity is required to be plausible and cannot change underneath a log` | **Verified** |
+| A repeated delivery is recognised, not duplicated | MP#24 | `prv-project::MergeReport::already_present` | `sending_the_same_bytes_twice_costs_nothing`, `a message delivered twice is recognised rather than applied twice` | **Verified** |
+| The core never opens a socket | ADR-0001, MP#26 | `prv-ffi::exports` sync calls | architecture rule 1; the host carries every byte | **Enforced** |
 | The project refers to media, never contains it | MP#29, ADR-0003 | `prv-project::TrackRef` | structural — a placement holds a reference | **Verified** |
 | Offline-first | MP#1, MP#24 | ADR-0001, ADR-0006 | the core has no network dependency, enforced by rule 1 | **Enforced** |
 | The language boundary is coarse-grained | MP#4, ADR-0001 | `prv-ffi::Engine` | `a_host_can_start_an_engine_place_a_track_and_hear_it` | **Verified** |

@@ -21,7 +21,7 @@ I infrastructure, P presentation.
 | `learning` | Personal profile, style model, preference confidence | D | `core/prv-learning` | MP#5 |
 | `ai-orchestrator` | Task planning, agent registry, conflict resolution | A | `core/prv-ai` | MP#6, MP#19 |
 | `export` | Render, encode, metadata embedding, integrity, reports | A | `core/prv-export` | MP#3A, MP#3C |
-| `cloud-sync` | Sync state, change detection, conflicts, backup | A | `core/prv-sync` | MP#24 |
+| `cloud-sync` | Sync state, change detection, conflicts, backup; the wire format lives in `prv-project` with the enum it encodes | A | `core/prv-sync`, `core/prv-project::wire` | MP#24 |
 | `plugin-manager` | Manifest, permissions, lifecycle, tiered isolation | A | `core/prv-plugin` | MP#23, ADR-0005 |
 | `security` | Authorisation rules, secrets, audit, integrity | A | `core/prv-security` | MP#26 |
 | `settings` | Preferences, modes, capability flags | A | `core/prv-settings` | MP#8 |

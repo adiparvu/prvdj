@@ -419,4 +419,124 @@ public final class Engine {
         try EngineError.check(prv_engine_render_was_complete(handle, &value))
         return value != 0
     }
+
+    // MARK: - Synchronisation
+
+    /// Declares which device this is.
+    ///
+    /// Call it before the project holds anything. The value must be stable for
+    /// this installation and distinct from every other — both facts about the
+    /// machine, which is why the core cannot supply them. ``PRVKit`` reads one
+    /// from the platform's own storage and passes it here.
+    public func setDevice(_ device: UInt64) throws {
+        try EngineError.check(prv_engine_set_device(handle, device))
+    }
+
+    /// What this project has already seen, for a peer to answer.
+    ///
+    /// The first half of a synchronisation, and the reason it is incremental:
+    /// the other side replies with what this vector has not seen rather than
+    /// with the whole project.
+    public func syncState() throws -> [UInt8] {
+        try readBytes { into, capacity, needed in
+            prv_engine_sync_state(handle, into, capacity, needed)
+        }
+    }
+
+    /// The operations a peer has not seen.
+    ///
+    /// Two calls underneath: one that builds the message and reports its size,
+    /// and one that copies it. That is what lets the caller allocate exactly
+    /// once for a message whose size nobody can predict.
+    public func syncMessage(for peerState: [UInt8]) throws -> [UInt8] {
+        var needed: UInt64 = 0
+        try peerState.withUnsafeBufferPointer { peer in
+            try EngineError.check(
+                prv_engine_sync_prepare(handle, peer.baseAddress, UInt64(peer.count), &needed)
+            )
+        }
+        return try readBytes { into, capacity, size in
+            prv_engine_sync_outbound(handle, into, capacity, size)
+        }
+    }
+
+    /// Merges what a peer sent.
+    @discardableResult
+    public func merge(_ message: [UInt8]) throws -> SyncReport {
+        var applied: UInt64 = 0
+        var alreadyPresent: UInt64 = 0
+        var conflicts: UInt64 = 0
+        var carried: UInt64 = 0
+        try message.withUnsafeBufferPointer { bytes in
+            try EngineError.check(
+                prv_engine_sync_merge(
+                    handle,
+                    bytes.baseAddress,
+                    UInt64(bytes.count),
+                    &applied,
+                    &alreadyPresent,
+                    &conflicts,
+                    &carried
+                )
+            )
+        }
+        return SyncReport(
+            applied: applied,
+            alreadyPresent: alreadyPresent,
+            conflicts: conflicts,
+            carried: carried
+        )
+    }
+
+    /// Runs the boundary's ask-then-fill convention once.
+    ///
+    /// Every call that returns bytes writes the size it needs whether or not the
+    /// buffer fitted, so the first call passes nothing and the second allocates
+    /// exactly. Written once here rather than at each call site, because the
+    /// version of this that gets it wrong is the one that was written out by
+    /// hand for the fourth time.
+    private func readBytes(
+        _ call: (UnsafeMutablePointer<UInt8>?, UInt64, UnsafeMutablePointer<UInt64>?) -> Int32
+    ) throws -> [UInt8] {
+        var needed: UInt64 = 0
+        let status = call(nil, 0, &needed)
+        if status != PRV_OK.rawValue && status != PRV_BUFFER_TOO_SMALL.rawValue {
+            try EngineError.check(status)
+        }
+        guard needed > 0 else { return [] }
+
+        var bytes = [UInt8](repeating: 0, count: Int(needed))
+        var written: UInt64 = 0
+        try bytes.withUnsafeMutableBufferPointer { buffer in
+            try EngineError.check(call(buffer.baseAddress, UInt64(buffer.count), &written))
+        }
+        return bytes
+    }
+}
+
+/// What a merge did.
+///
+/// Four counts rather than one, because they mean four different things to
+/// whoever is looking at the screen.
+public struct SyncReport: Equatable, Sendable {
+    /// Operations that were new and have been applied.
+    public let applied: UInt64
+    /// Operations already present. The normal case, not a problem: a device
+    /// sends whatever the other side might not have, and overlap is expected.
+    public let alreadyPresent: UInt64
+    /// Pairs that disagree and need a person to decide.
+    public let conflicts: UInt64
+    /// Operations made by a newer version of the app.
+    ///
+    /// They travel — a message carrying them can be passed on byte for byte, so
+    /// an older install relays rather than blocking a fleet — but they cannot be
+    /// shown here. A non-zero value means "part of this project was made with a
+    /// newer version", which is the true and useful thing to say.
+    public let carried: UInt64
+
+    /// Whether anything needs a person.
+    public var needsReview: Bool { conflicts > 0 }
+
+    /// Whether anything arrived that this build cannot show.
+    public var needsANewerVersion: Bool { carried > 0 }
 }

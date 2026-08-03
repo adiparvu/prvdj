@@ -509,8 +509,8 @@ transport, the project, the timeline, rendering, planning, analysis, the
 collection, consent, entitlement, delivery, settings and notifications: all
 callable from C, all wrapped in Swift, all tested on Linux on every commit.
 
-What is left out of the boundary is `prv-plugin`, `prv-sync`, `prv-learning` and
-`prv-telemetry` — four contexts whose hosts do not exist yet. A boundary for a
+What is left out of the boundary is `prv-plugin`, `prv-learning` and
+`prv-telemetry` — three contexts whose hosts do not exist yet. A boundary for a
 plugin loader with no plugin host to load into would be a guess about a shape
 nobody has built against, and ADR-0005 is explicit that the isolation tier
 decides the interface. They are named here rather than quietly omitted.
@@ -536,6 +536,92 @@ entitlement cannot. Without that key the operating system makes an outbound
 connection *impossible*, so the promise is enforced below us. Rule 10 keeps it
 absent, and cloud sync will add it in the same commit as the consent screen it
 depends on — deliberately, not quietly.
+
+### Sprint 39 — the wire format, and a defect it exposed
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-project::wire` codec | Completed | Verified | Thirteen payload kinds, each pinned to a number that can never change |
+| A version vector as a message of its own | Completed | Verified | The half of the protocol that goes first; makes sync incremental |
+| Forward compatibility at three levels | Completed | Verified | Header, entry and payload each framed, so a newer build can add to any of them |
+| An unreadable operation is carried, not dropped | Completed | Verified | Byte-exact relay; an older install is not a hole in a fleet |
+| Bounded allocation on untrusted bytes | Completed | Verified | Every count checked against the bytes present before anything is reserved |
+| `prv-ffi` synchronisation calls | Completed | Verified | Four calls; the core produces bytes and the host owns the socket |
+| `prv_engine_set_device` | Completed | Verified | Device identity is a fact about the machine, so the host declares it |
+| `PRVCore.Engine` sync surface | Completed | **Verified on Linux** | Eight tests, including both directions converging |
+| Placement identities namespaced by device | Completed | Verified | A defect the bidirectional test found; see below |
+| ABI minor version 1.7 | Completed | Verified | Calls added, nothing existing moved |
+
+**Why the codec lives in `prv-project` and not `prv-sync`.** The encoder must
+handle every variant of `OperationPayload`, and only the crate that defines that
+enum can have the compiler say so. One crate away the enum is `non_exhaustive`,
+the match needs a wildcard, and a new kind of edit would ship as an operation
+that silently refuses to travel. ADR-0003's rule — a variant is never redefined
+and never removed — is a rule about that file, so that is where it is kept.
+
+**Understand all of it, or none of it.** A reader that meets something it does
+not know keeps the entry's bytes exactly as they arrived, reports it, and passes
+it on unchanged. It does not apply half of it: an entry carrying a payload this
+build knows *plus* a field it does not is treated as not understood, because
+storing an edit stripped of the meaning its author gave it, and then relaying the
+stripped version as though it were theirs, is worse than carrying it whole.
+
+The practical rule for anyone extending the format: prefer a new variant over a
+new field on an existing one. Both are safe; the second costs old builds the
+ability to apply that variant at all.
+
+**What the codec does not claim.** There is no checksum. Master Prompt #26
+requires the transport to be encrypted and authenticated, which detects tampering
+far better than a checksum, and a checksum beside real authentication mostly
+gives a reader's confidence somewhere to come from when it should not. A test
+sweeps every byte of a message through five values and asserts what is actually
+true — no panic, no allocation the bytes did not pay for, and anything the reader
+accepts it can write back out and read again identically. It does *not* assert
+that damage is detected, and the comment says why.
+
+### The defect the bidirectional test found
+
+Writing "both sides end up with the same project" failed, and the reason was not
+in the new code.
+
+Every engine allocated placement identities from a counter starting at one. Two
+machines editing the same project offline therefore both called their first clip
+`placement:1`. Merging produced two `PlaceTrack` operations claiming the same
+placement — reported as conflicts rather than lost, so nothing was silently
+destroyed, but a user would have met one conflict per clip either of them added,
+which is the same as having no conflict detection at all.
+
+The lesson was already in the codebase and had not been applied twice.
+`OperationId` is a device plus a number that device allocates itself, precisely
+so two offline machines cannot collide. Placement identities now inherit the same
+idea: the high half of the number names the device, the low half counts, and a
+device that exhausts its half is refused rather than spilling into its
+neighbour's.
+
+The residual limit is stated rather than hidden: the device half is a 32-bit
+fingerprint, so two devices collide only if their fingerprints do. Sixty-four
+bits of exactness would need both halves whole, and a placement identity is a
+`uint64_t` at a boundary whose major version forbids changing a call that already
+exists. The risk is bounded by the devices sharing *one* project — a handful, not
+a population — and it fails the way the old scheme failed rather than a new way.
+
+### What synchronisation still does not do
+
+**Store-and-forward of unreadable operations.** A message carrying operations
+from a newer build can be passed on byte for byte. What is not built is holding
+them: they are not written into the log, so a device that merges a message and
+later derives a new one from its own log will not re-emit them. Doing it properly
+means the log holding operations it cannot fold, and it means being careful about
+the version vector — a device that recorded them as seen would be telling peers
+it holds work it cannot produce, which is worse than not holding it. The count is
+reported so a person can be told; the storage is deliberately deferred.
+
+**A transport.** There is none, and that is ADR-0001 working rather than a gap:
+the core produces bytes and reads bytes. The same four calls serve a cloud
+service, a local network, a memory stick and a file attached to an email. The
+entitlement that would let the application open a socket is still absent, and
+architecture rule 10 keeps it absent until the consent screen it depends on ships
+in the same commit.
 
 ### The privacy distinction the tests found
 

@@ -62,6 +62,7 @@ mod log;
 mod operation;
 pub mod parameter;
 mod state;
+pub mod wire;
 
 pub use log::{Conflict, ConflictKind, MergeReport, OperationLog, ProjectError, Undo};
 pub use operation::{
@@ -73,3 +74,4 @@ pub use parameter::{
     PluginParameterId, MAX_PLUGIN_PARAMETER_LENGTH,
 };
 pub use state::{Marker, Placement, ProjectState};
+pub use wire::{Entry, Message, Unrecognised, WireError};

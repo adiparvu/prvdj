@@ -81,6 +81,59 @@ pub(crate) unsafe fn as_mut<'a, T>(pointer: *mut T) -> Result<&'a mut T, Status>
     Ok(unsafe { &mut *pointer })
 }
 
+/// How many bytes a declared capacity actually is, saturating rather than
+/// wrapping.
+///
+/// A capacity that will not fit a `usize` cannot describe memory this process
+/// can address, so treating it as "as much as there is" is both safe and the
+/// only interpretation that does not silently truncate to something small.
+pub(crate) fn buffer_capacity(capacity: u64) -> usize {
+    usize::try_from(capacity).unwrap_or(usize::MAX)
+}
+
+/// Turns a caller's pointer and length into a slice to write into.
+///
+/// A zero capacity is how a caller asks "how big is this" without providing
+/// anywhere to put it, so an empty slice is the honest representation rather
+/// than a dangling one — and it is the only case in which a null pointer is
+/// accepted.
+///
+/// # Safety
+///
+/// `pointer` must be writable for `capacity` bytes, or null when `capacity` is
+/// zero. The slice must not be aliased for `'a`.
+pub(crate) unsafe fn writable<'a>(pointer: *mut u8, capacity: u64) -> Result<&'a mut [u8], Status> {
+    let capacity = buffer_capacity(capacity);
+    if capacity == 0 {
+        return Ok(&mut []);
+    }
+    if pointer.is_null() {
+        return Err(Status::NullPointer);
+    }
+    // SAFETY: non-null was checked above; writability for `capacity` bytes is the
+    // entry point's documented precondition.
+    Ok(unsafe { core::slice::from_raw_parts_mut(pointer, capacity) })
+}
+
+/// Turns a caller's pointer and length into a slice to read from.
+///
+/// # Safety
+///
+/// `pointer` must be readable for `len` bytes, or null when `len` is zero, and
+/// must not be written by anything else for `'a`.
+pub(crate) unsafe fn readable<'a>(pointer: *const u8, len: u64) -> Result<&'a [u8], Status> {
+    let len = buffer_capacity(len);
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null() {
+        return Err(Status::NullPointer);
+    }
+    // SAFETY: non-null was checked above; readability for `len` bytes is the
+    // entry point's documented precondition.
+    Ok(unsafe { core::slice::from_raw_parts(pointer, len) })
+}
+
 /// Runs `body` with the error arm folded into the status.
 ///
 /// Saves every entry point from writing the same `match` around a `?`-chain,

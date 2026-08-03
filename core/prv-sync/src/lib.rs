@@ -49,7 +49,10 @@ mod tests {
     )]
 
     use super::*;
-    use prv_project::{DeviceId, OperationId};
+    use prv_project::{
+        wire, DeviceId, MarkerId, OperationId, OperationLog, OperationPayload, PlacementId,
+        VersionVector,
+    };
     use prv_security::{Consents, Purpose};
 
     fn op(sequence: u64) -> OperationId {
@@ -103,6 +106,127 @@ mod tests {
 
         state = advance(state, SyncEvent::ConflictResolved);
         assert_eq!(state, SyncState::Idle);
+    }
+
+    #[test]
+    fn two_laptops_a_night_apart_and_only_bytes_between_them() {
+        // The exchange the whole crate exists to make possible, with nothing
+        // simulated except the network. `prv-project` decides what merges and
+        // what conflicts; `prv-project::wire` turns operations into bytes; this
+        // crate decides when to send and what is still owed. The test is here
+        // because it is the only place all three meet.
+        let studio = DeviceId::new(1);
+        let laptop = DeviceId::new(2);
+
+        // A project that already exists on both machines.
+        let mut here = OperationLog::new();
+        let shared = here.author(
+            studio,
+            1_000,
+            OperationPayload::SetProjectName {
+                name: "Saturday".to_owned(),
+            },
+        );
+        here.append(shared).expect("appends");
+        let mut there = here.clone();
+
+        // The evening: edits on one machine, with no network and nothing lost.
+        let mut state = SyncState::Offline;
+        let mut outbox = Outbox::new();
+        for index in 0..64_u64 {
+            let payload = OperationPayload::RemovePlacement {
+                placement: PlacementId::new(index),
+            };
+            let operation = here.author(
+                studio,
+                2_000 + i64::try_from(index).expect("small"),
+                payload,
+            );
+            let id = operation.id;
+            here.append(operation).expect("appends");
+            outbox.hold(id).expect("held");
+            assert!(state.editing_is_allowed());
+        }
+
+        // Meanwhile the other machine is edited too, by someone who has not seen
+        // any of that. Concurrent, and on a different entity, so it merges
+        // silently — the case that must never interrupt anyone.
+        let elsewhere = there.author(
+            laptop,
+            2_500,
+            OperationPayload::RemoveMarker {
+                marker: MarkerId::new(1),
+            },
+        );
+        there.append(elsewhere).expect("appends");
+
+        // Morning. Each side sends what the other has not seen — which is what
+        // the version vector is for, and why synchronisation is incremental
+        // rather than a full exchange.
+        state = advance(state, SyncEvent::NetworkAvailable);
+        state = advance(state, SyncEvent::WorkToSend);
+        assert!(state.is_transferring());
+
+        let outbound =
+            wire::encode(&here.operations_since(there.version_vector())).expect("encodes");
+        let inbound =
+            wire::encode(&there.operations_since(here.version_vector())).expect("encodes");
+        assert!(outbound.len() < 8_192, "64 edits should not cost a page");
+
+        let received = wire::decode(&outbound).expect("decodes");
+        assert_eq!(received.unrecognised_count(), 0);
+        let report = there.merge(&received.to_operations()).expect("merges");
+        assert_eq!(report.applied, 64);
+        assert!(!report.needs_review(), "{report}");
+
+        let returning = wire::decode(&inbound).expect("decodes");
+        let report = here.merge(&returning.to_operations()).expect("merges");
+        assert_eq!(report.applied, 1);
+        assert!(!report.needs_review(), "{report}");
+
+        // Both machines now hold the same project, and neither had to be told
+        // which one was authoritative.
+        assert_eq!(here.state(), there.state());
+        assert_eq!(here.len(), there.len());
+
+        // And the work is no longer owed.
+        outbox.acknowledge_through(there.version_vector());
+        assert!(outbox.is_empty());
+        state = advance(state, SyncEvent::TransferFinished);
+        assert_eq!(state, SyncState::Idle);
+    }
+
+    #[test]
+    fn sending_the_same_bytes_twice_costs_nothing() {
+        // A network that loses a reply makes a client send again. Operations
+        // carry identities allocated without coordination, so the second
+        // delivery is recognised rather than duplicated — the property the
+        // outbox already relies on, checked here through the wire.
+        let device = DeviceId::new(1);
+        let mut here = OperationLog::new();
+        let operation = here.author(
+            device,
+            1_000,
+            OperationPayload::RemoveMarker {
+                marker: MarkerId::new(4),
+            },
+        );
+        here.append(operation).expect("appends");
+
+        let bytes = wire::encode(&here.operations_since(&VersionVector::new())).expect("encodes");
+        let mut there = OperationLog::new();
+
+        let first = there
+            .merge(&wire::decode(&bytes).expect("decodes").to_operations())
+            .expect("merges");
+        let second = there
+            .merge(&wire::decode(&bytes).expect("decodes").to_operations())
+            .expect("merges");
+
+        assert_eq!(first.applied, 1);
+        assert_eq!(second.applied, 0);
+        assert_eq!(second.already_present, 1);
+        assert_eq!(there.len(), 1);
     }
 
     #[test]

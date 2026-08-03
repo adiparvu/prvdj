@@ -138,6 +138,19 @@ impl VersionVector {
     pub fn device_count(&self) -> usize {
         self.seen.len()
     }
+
+    /// Every device this vector knows about, with the highest sequence seen from
+    /// it.
+    ///
+    /// In device order, and that ordering is part of the contract rather than an
+    /// accident of the container: [`wire`](crate::wire) writes a vector out in
+    /// this order, and a canonical encoding is what lets two devices compare,
+    /// cache or sign the same message and get the same answer.
+    pub fn entries(&self) -> impl Iterator<Item = (DeviceId, u64)> + '_ {
+        self.seen
+            .iter()
+            .map(|(device, sequence)| (*device, *sequence))
+    }
 }
 
 /// A reference to a track in the library.

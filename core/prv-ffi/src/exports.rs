@@ -21,7 +21,7 @@ use crate::collection::Collection;
 use crate::delivery::Delivery;
 use crate::engine::{Engine, ReadAudio};
 use crate::experience::Experience;
-use crate::guard::{as_mut, as_ref, guarded_try};
+use crate::guard::{as_mut, as_ref, buffer_capacity, guarded_try, readable, writable};
 use crate::mapping::event_from_code;
 use crate::planning::Planner;
 use crate::policy::Policy;
@@ -354,6 +354,177 @@ pub unsafe extern "C" fn prv_engine_render_was_complete(
         // SAFETY: as above.
         let slot = unsafe { as_mut(out_complete) }?;
         *slot = i32::from(engine.render_was_complete());
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Synchronisation
+//
+// The core produces bytes and reads bytes; the host owns the socket. ADR-0001
+// makes that non-negotiable, and it is also the arrangement that lets the same
+// four calls serve a cloud service, a local network, a USB stick and a file
+// attached to an email — none of which the core has to know about.
+//
+// The protocol is two messages and three steps. A device sends its version
+// vector; the other side answers with the operations that vector has not seen;
+// each merges what it received. Both sides may do it at once, and neither is
+// authoritative.
+// ---------------------------------------------------------------------------
+
+/// Declares which device this is.
+///
+/// Must be called before the project holds any operations, and must be given a
+/// value that is stable for this installation and distinct from every other —
+/// both of which are facts about the machine, which is why the host supplies
+/// them.
+///
+/// A host that never calls this gets a default that is correct for one machine
+/// and wrong for a fleet. It fails loudly rather than quietly: two devices
+/// sharing an identity produce operations with the same name and different
+/// contents, and a merge reports those as conflicts instead of letting one
+/// overwrite the other.
+///
+/// # Safety
+///
+/// `engine` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_set_device(engine: *mut Engine, device: u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(engine) }?.set_device(device)
+    })
+    .code()
+}
+
+/// Writes what this project has seen, for a peer to answer.
+///
+/// Writes to `out_needed` how many bytes the vector requires whether or not it
+/// fitted, so a caller may pass a null buffer with a zero capacity to ask the
+/// size and then allocate exactly.
+///
+/// # Safety
+///
+/// `engine` must be live, `into` writable for `capacity` bytes, and `out_needed`
+/// writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_sync_state(
+    engine: *const Engine,
+    into: *mut u8,
+    capacity: u64,
+    out_needed: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_ref(engine) }?;
+        // SAFETY: as above.
+        let buffer = unsafe { writable(into, capacity) }?;
+        let needed = engine.sync_state(buffer)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needed) }? = needed.try_into().unwrap_or(u64::MAX);
+        if needed > buffer_capacity(capacity) {
+            return Err(Status::BufferTooSmall);
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Prepares the operations a peer has not seen and reports their size.
+///
+/// Nothing is copied out here. The message is built once and held, so a host
+/// learns the exact size before allocating and
+/// [`prv_engine_sync_outbound`] hands it over — which also means a host whose
+/// buffer was too small may simply ask again rather than rebuild.
+///
+/// # Safety
+///
+/// `engine` must be live, `peer_state` readable for `peer_state_len` bytes, and
+/// `out_needed` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_sync_prepare(
+    engine: *mut Engine,
+    peer_state: *const u8,
+    peer_state_len: u64,
+    out_needed: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_mut(engine) }?;
+        // SAFETY: as above.
+        let peer = unsafe { readable(peer_state, peer_state_len) }?;
+        let needed = engine.sync_prepare(peer)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needed) }? = needed.try_into().unwrap_or(u64::MAX);
+        Ok(())
+    })
+    .code()
+}
+
+/// Copies out the message [`prv_engine_sync_prepare`] built.
+///
+/// # Safety
+///
+/// `engine` must be live, `into` writable for `capacity` bytes, and `out_needed`
+/// writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_sync_outbound(
+    engine: *const Engine,
+    into: *mut u8,
+    capacity: u64,
+    out_needed: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_ref(engine) }?;
+        // SAFETY: as above.
+        let buffer = unsafe { writable(into, capacity) }?;
+        let needed = engine.sync_outbound(buffer)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needed) }? = needed.try_into().unwrap_or(u64::MAX);
+        if needed > buffer_capacity(capacity) {
+            return Err(Status::BufferTooSmall);
+        }
+        Ok(())
+    })
+    .code()
+}
+
+/// Merges a message from a peer.
+///
+/// The four counts are written whatever happens, and they mean four different
+/// things: work arrived, work was already here, work disagrees and needs a
+/// person, and work could not be read because it was made by a newer build.
+///
+/// # Safety
+///
+/// `engine` must be live, `bytes` readable for `len` bytes, and each out-pointer
+/// writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_sync_merge(
+    engine: *mut Engine,
+    bytes: *const u8,
+    len: u64,
+    out_applied: *mut u64,
+    out_already_present: *mut u64,
+    out_conflicts: *mut u64,
+    out_carried: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_mut(engine) }?;
+        // SAFETY: as above.
+        let message = unsafe { readable(bytes, len) }?;
+        let report = engine.sync_merge(message)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_applied) }? = report.applied;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_already_present) }? = report.already_present;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_conflicts) }? = report.conflicts;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_carried) }? = report.carried;
         Ok(())
     })
     .code()
