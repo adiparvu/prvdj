@@ -821,6 +821,20 @@ and summarised in [17-known-limitations.md](17-known-limitations.md). The larges
 are time-stretching with key lock (Phase 2 audio work) and a realtime loudness
 meter.
 
+That register was reviewed in full at the end of Sprint 42 and two entries were
+found to be describing a product that no longer exists. One said processors had
+no way to address a parameter — built several sprints earlier, in
+`prv-project::ParameterAddress` and `prv-timeline::ParameterDescriptor`. The
+other said nothing user-facing existed, which stopped being true when the
+application started and `PRVUI` acquired the models behind every space. A third
+entry carried an orphaned resolution note about the tempo map, attached to a
+limitation it had nothing to do with.
+
+Resolved entries now stay in the register with what closed them, rather than
+being deleted. A register that quietly drops an entry is as untrustworthy as one
+that misses a problem, and the same is true of one that keeps describing a
+problem somebody already fixed.
+
 ## Environment limitation
 
 The available continuous-integration environment is Linux. It compiles and tests

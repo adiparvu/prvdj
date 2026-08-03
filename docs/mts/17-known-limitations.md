@@ -56,36 +56,20 @@ Phase 3.
 The ordering is meaningful and is tested; the absolute values are not yet
 trustworthy and are documented as such at the point of use.
 
-## 3. Processors have no parameter-addressing scheme
-
-Each processor exposes typed setters — `set_gains`, `set_position` — which is
-clear to call and cannot express automation, a MIDI mapping or a plugin
-parameter, all of which need to address a parameter by identity rather than by
-name at the call site. Master Prompt #21 requires automation of ten parameter
-kinds and Master Prompt #23 requires plugins to declare theirs.
-
-A parameter descriptor scheme — identity, range, unit, default, automatable — is
-the correct answer and is scheduled for Phase 2 with the automation lane. It is
-recorded here rather than improvised now, because a parameter model designed
-around one processor's needs would have to be redone when the second arrived.
-
-*Resolved in Sprint 1: the tempo map now supports multiple segments, so a beat
-grid can follow a recording that drifts.*
-
-## 4. Separation model not selected
+## 3. Separation model not selected
 
 ADR-0004 fixes the boundary, caching and privacy posture for stem separation but
 deliberately does not choose a model. That requires measured comparison on
 separation quality, transient behaviour, latency, memory and licence terms across
 supported device classes. Phase 3.
 
-## 5. Six token groups undefined
+## 4. Six token groups undefined
 
 Icons, illustrations, charts, borders, controller colours and accessibility
 colours are declared as pending rather than invented. Each lands with the first
-screen that consumes it. See section 5.
+screen that consumes it.
 
-## 6. Placement identities are namespaced, not globally unique
+## 5. Placement identities are namespaced, not globally unique
 
 The high half of a placement identity is a 32-bit fingerprint of the device that
 allocated it, so two devices collide only if their fingerprints do. Exactness
@@ -96,7 +80,7 @@ The risk is bounded by the devices sharing one project — a handful, not a
 population — and a collision fails as a reported conflict rather than as silent
 loss. Widening it belongs with the next major version of the boundary, not before.
 
-## 7. There is no transport
+## 6. There is no transport
 
 The core produces bytes and reads bytes; nothing opens a socket, which is
 ADR-0001 working rather than a gap. The same four calls serve a cloud service, a
@@ -107,8 +91,28 @@ and architecture rule 10 keeps it that way. It arrives in the same commit as the
 consent screen it depends on — deliberately, so that the operating system makes
 an outbound connection impossible until the user has been asked.
 
-## 8. Nothing user-facing exists
+## 7. No screen has been drawn
 
-By design. Master Prompt #30 sequences AI behind a stable timeline, playback and
-export, because a planner evaluated against an unstable foundation cannot be
-debugged. Phase 1 begins the user-facing work.
+Narrower than it used to read, and the difference is worth stating rather than
+leaving as a stale sentence. This section said "nothing user-facing exists", and
+that stopped being true several sprints ago: the application starts, and `PRVUI`
+holds the models behind six spaces, the library, the transport, planning, the
+consent screen and the synchronisation status — all built and tested on every
+commit.
+
+What has not happened is a SwiftUI view compiled against the real framework, and
+that is section 1 rather than a claim of its own. Master Prompt #30 sequences the
+work this way deliberately: a planner evaluated against an unstable foundation
+cannot be debugged, so the decisions come first and the drawing follows.
+
+## Resolved
+
+A register that quietly drops an entry is as untrustworthy as one that misses a
+problem. Resolved limitations stay here, with what closed them.
+
+| Was | Closed by |
+|---|---|
+| The tempo map held one segment, so a beat grid could not follow a recording that drifts | Sprint 1 — `prv-time::TempoMap` takes multiple segments |
+| Processors had no way to address a parameter, so automation, MIDI mapping and plugin parameters had nowhere to point | Sprint 7 and after — `prv-project::ParameterAddress` names one, `prv-timeline::ParameterDescriptor` says what values it takes, and the renderer reads both |
+| Operations from a newer build were counted and dropped, so a relay stopped at a restart | Sprint 40 — carried operations are written into the log, re-emitted, and promoted after an upgrade |
+| The sync state machine did not reach the host, so a host would have reimplemented its rules | Sprint 42 — `prv-ffi::sync`, with the rules staying in the core |

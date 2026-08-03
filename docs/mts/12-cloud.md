@@ -45,7 +45,7 @@ inherited:
   against the bytes actually present before anything is reserved.
 
 The format's limits are recorded in
-[17-known-limitations.md](17-known-limitations.md), sections 6 and 7.
+[17-known-limitations.md](17-known-limitations.md), sections 5 and 6.
 
 ## Decisions already fixed
 
