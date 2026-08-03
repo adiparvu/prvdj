@@ -659,6 +659,70 @@ become ordinary operations. The user sees work appear that was theirs all along,
 reconstructed from nothing, because the bytes the author wrote were never
 rewritten by anyone in between.
 
+### Sprint 41 — what goes with this?
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-mix::affinity` | Completed | Verified | The pair, judged with no set in mind |
+| Direction is part of the question | Completed | Verified | `what_follows` and `what_precedes` are different lists |
+| Clashing keys are absent, not ranked last | Completed | Verified | A musical fact rather than a preference |
+| A stable ranking | Completed | Verified | Ties broken by identity, so the same question gives the same answer |
+| `prv_planner_neighbours`, `prv_planner_neighbour` | Completed | Verified | Driven from C against the committed header |
+| `PrvComponent` in the generated header | Completed | Verified | Numbered from one, so zero is never a component |
+| `PRVCore.Neighbour`, `ScoreComponent` | Completed | **Verified on Linux** | Three more tests |
+| ABI minor version 1.9 | Completed | Verified | Calls added, nothing existing moved |
+
+**The question the planner could not answer.** `transition::score` needs a
+`Goal`, because half of what makes a move good is where the evening is going —
+the same two records are a great move at the peak and a poor one at the start.
+Master Prompt #20 asks for something else: what goes with this record, asked at
+import, before there is a set to ask it of.
+
+That question is about the *pair*, and it has an answer without a journey.
+Every component is judged by the same functions the planner uses, except energy:
+with no set, the only thing energy continuity can mean is continuity, so that is
+what it means. The planner scores energy against what the set wants next, which
+is often deliberately not continuity — a set that means to lift wants the next
+record higher, and the planner is right to prefer one.
+
+So affinity is the pair and the plan is the journey. A record can be an excellent
+neighbour and the wrong record for this moment, and both are true at once. Saying
+that plainly is what stops the two disagreeing in a way that teaches people to
+ignore one of them.
+
+**Tempo is judged at the widest tolerance any setting allows**, which makes that
+component an upper bound: no plan at any creativity setting scores a pair's tempo
+higher, because a tighter allowance can only cost more. There is a test. A
+shortlist that promised more than a set could deliver would be the worse mistake.
+
+**Clashing keys are not neighbours at all.** `prv-harmony` separates clashing
+from merely risky precisely so this distinction can be made without a setting,
+and a list that ranked unlistenable moves at the bottom would be a list nobody
+could trust the top of. An *unknown* key is not a clash — that would bury every
+record whose analysis has not finished, which is most of a library on the day
+somebody imports it.
+
+**Neighbours live on the planner handle**, not on the collection, because they
+need exactly the facts a plan needs and the planner's library already holds them.
+A second path would mean a second place for a host to describe its records, and
+the two would drift.
+
+### The fixture that was lying, and the test that was comparing the wrong things
+
+Two failures in this sprint were both in tests rather than in code, and both were
+worth the time.
+
+The first asserted that a badly-matched tempo made tempo the weakest component.
+It did not: the fixtures had no mix points, so *structure* was weakest — truly,
+since nothing was known about where to mix. The fixture was fixed rather than the
+assertion, because a library of records with no analysed mix points is not the
+library the module is for.
+
+The second compared affinity's tempo component against one computed from ideal
+beats per minute. A tempo is stored as microseconds per beat, so 132 comes back
+as very nearly 132, and the test was measuring that rounding rather than the
+property it meant to check. Now both sides read the tempo from the same place.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

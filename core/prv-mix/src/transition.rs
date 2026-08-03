@@ -254,6 +254,20 @@ pub enum Component {
 }
 
 impl Component {
+    /// Every component, in the order the score reports them.
+    ///
+    /// Exists so that anything enumerating them — a generated header, a
+    /// localisation table, a legend on a screen — is a compile error away from
+    /// being out of date when a component is added.
+    pub const ALL: [Self; 6] = [
+        Self::Harmonic,
+        Self::Tempo,
+        Self::Energy,
+        Self::Structure,
+        Self::Level,
+        Self::Vocal,
+    ];
+
     /// A stable identifier.
     #[must_use]
     pub const fn key(self) -> &'static str {
@@ -410,7 +424,7 @@ pub fn score(
 /// A key detected with low confidence is discounted toward neutral in
 /// proportion to that confidence, which is the only use of a confidence that
 /// does not require a threshold.
-fn harmonic_component(
+pub(crate) fn harmonic_component(
     harmony: Option<HarmonicCompatibility>,
     from: &Candidate,
     to: &Candidate,
@@ -432,7 +446,7 @@ fn harmonic_component(
 /// zero and a move that needs no change scores one. Linear rather than a curve
 /// because the underlying quantity — audible pitch shift — is itself roughly
 /// linear in the fraction over this range.
-fn tempo_component(change: f32, allowed: f32) -> f32 {
+pub(crate) fn tempo_component(change: f32, allowed: f32) -> f32 {
     if allowed <= 0.0 {
         return if change.abs() <= 0.0 { 1.0 } else { 0.0 };
     }
@@ -445,7 +459,7 @@ fn tempo_component(change: f32, allowed: f32) -> f32 {
 /// little *above* the curve is a lift; coming in a little below is a drop, and
 /// a room notices a drop far more than a lift. So undershooting costs twice
 /// what overshooting does.
-fn energy_component(energy: f32, target: f32) -> f32 {
+pub(crate) fn energy_component(energy: f32, target: f32) -> f32 {
     let difference = f64::from(energy) - f64::from(target);
     let penalty = if difference < 0.0 {
         -difference * 2.0
@@ -461,7 +475,7 @@ fn energy_component(energy: f32, target: f32) -> f32 {
 /// mixed properly; two tracks that both run at full tilt from first sample to
 /// last can only be cut. Both are legitimate, and one is much easier, so this
 /// is a scored preference rather than a constraint.
-fn structure_component(from: &Candidate, to: &Candidate) -> f32 {
+pub(crate) fn structure_component(from: &Candidate, to: &Candidate) -> f32 {
     match (from.best_exit(), to.best_entry()) {
         (Some(exit), Some(entry)) => {
             // Quieter is better on both sides: the less arrangement is exposed
@@ -479,7 +493,7 @@ fn structure_component(from: &Candidate, to: &Candidate) -> f32 {
 ///
 /// Three decibels is where a listener starts to hear a transition as a level
 /// change rather than as a new track, so the component reaches zero there.
-fn level_component(from: &Candidate, to: &Candidate) -> f32 {
+pub(crate) fn level_component(from: &Candidate, to: &Candidate) -> f32 {
     /// The level change, in decibels, at which the component reaches zero.
     const AUDIBLE_JUMP_DB: f64 = 3.0;
 
@@ -493,7 +507,7 @@ fn level_component(from: &Candidate, to: &Candidate) -> f32 {
 /// so two known vocal tracks score zero. An unknown scores in between rather
 /// than clean: "we do not know" should cost a little, or the planner would
 /// prefer tracks whose vocal status was never determined.
-fn vocal_component(from: &Candidate, to: &Candidate) -> f32 {
+pub(crate) fn vocal_component(from: &Candidate, to: &Candidate) -> f32 {
     match (from.has_vocals(), to.has_vocals()) {
         (Some(true), Some(true)) => 0.0,
         (Some(false), _) | (_, Some(false)) => 1.0,

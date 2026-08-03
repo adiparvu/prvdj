@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 8
+#define PRV_ABI_MINOR 9
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -84,6 +84,21 @@ typedef enum PrvTransportEvent {
        int32_t every function here takes. Never returned, never compared. */
     PRV_EVENT_FORCE_SIGNED = -1,
 } PrvTransportEvent;
+
+/* What part of a pairing is hardest. Numbered from one so that zero is
+         * never a component: a host reading an uninitialised value gets something
+         * it can recognise as wrong rather than "harmonic". */
+typedef enum PrvComponent {
+    PRV_COMPONENT_HARMONIC = 1,
+    PRV_COMPONENT_TEMPO = 2,
+    PRV_COMPONENT_ENERGY = 3,
+    PRV_COMPONENT_STRUCTURE = 4,
+    PRV_COMPONENT_LEVEL = 5,
+    PRV_COMPONENT_VOCAL = 6,
+    /* Not a value. Present so the underlying type is signed, matching the
+       int32_t every function here takes. Never returned, never compared. */
+    PRV_COMPONENT_FORCE_SIGNED = -1,
+} PrvComponent;
 
 /* What a user may agree to. Nothing is agreed to by default. */
 typedef enum PrvPurpose {
@@ -521,6 +536,36 @@ int32_t prv_engine_promote_carried(PrvEngine *engine, uint64_t *out_promoted);
  * one open while replanning.
  */
 int32_t prv_planner_create(PrvPlanner **out_planner);
+
+/*
+ * Ranks the records that sit best after — or before — a given one.
+ *
+ * Answers "what mixes out of this?" without a set, which is the question
+ * a person asks at import and every time they look at a record and
+ * wonder. Different from planning: a plan judges a move against where
+ * the evening is going, and this judges the pair.
+ *
+ * following non-zero asks what comes AFTER track; zero asks what comes
+ * BEFORE. They are genuinely different lists — every component that
+ * depends on direction is measured the other way round.
+ *
+ * Records whose keys clash are not in the list at all. That is a musical
+ * fact rather than a preference, and a list that ranked unlistenable
+ * moves at the bottom would be one nobody could trust the top of.
+ */
+int32_t prv_planner_neighbours(PrvPlanner *planner, uint64_t track, int32_t following,
+                               uint64_t limit, uint64_t *out_count);
+
+/*
+ * Reads one row of the last ranking.
+ *
+ * out_weakest receives the component that costs the pairing the most. It
+ * is what an interface says out loud: a DJ told "0.71" learns nothing,
+ * and a DJ told "the tempo is the hard part here" knows what to do.
+ */
+int32_t prv_planner_neighbour(const PrvPlanner *planner, uint64_t index,
+                              uint64_t *out_track, float *out_score,
+                              int32_t *out_weakest);
 
 /*
  * Destroys a planner. NULL is accepted and does nothing.

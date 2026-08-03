@@ -129,6 +129,10 @@ fn declarations() -> Vec<Declaration> {
     ) -> i32 = prv_ffi::exports::prv_engine_sync_merge;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_carried_count;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Planner, u64, i32, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_planner_neighbours;
+    let _: unsafe extern "C" fn(*const prv_ffi::Planner, u64, *mut u64, *mut f32, *mut i32) -> i32 =
+        prv_ffi::exports::prv_planner_neighbour;
     let _: unsafe extern "C" fn(*mut prv_ffi::Engine, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_promote_carried;
     let _: unsafe extern "C" fn(*mut *mut prv_ffi::Planner) -> i32 =
@@ -540,6 +544,37 @@ fn declarations() -> Vec<Declaration> {
                 "A separate handle from the engine, deliberately. A library and a plan",
                 "are not a project: a host may plan with no project open, and may keep",
                 "one open while replanning.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_neighbours(PrvPlanner *planner, uint64_t track, \
+                        int32_t following, uint64_t limit, uint64_t *out_count)",
+            doc: &[
+                "Ranks the records that sit best after — or before — a given one.",
+                "",
+                "Answers \"what mixes out of this?\" without a set, which is the question",
+                "a person asks at import and every time they look at a record and",
+                "wonder. Different from planning: a plan judges a move against where",
+                "the evening is going, and this judges the pair.",
+                "",
+                "following non-zero asks what comes AFTER track; zero asks what comes",
+                "BEFORE. They are genuinely different lists — every component that",
+                "depends on direction is measured the other way round.",
+                "",
+                "Records whose keys clash are not in the list at all. That is a musical",
+                "fact rather than a preference, and a list that ranked unlistenable",
+                "moves at the bottom would be one nobody could trust the top of.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_planner_neighbour(const PrvPlanner *planner, uint64_t index, \
+                        uint64_t *out_track, float *out_score, int32_t *out_weakest)",
+            doc: &[
+                "Reads one row of the last ranking.",
+                "",
+                "out_weakest receives the component that costs the pairing the most. It",
+                "is what an interface says out loud: a DJ told \"0.71\" learns nothing,",
+                "and a DJ told \"the tempo is the hard part here\" knows what to do.",
             ],
         },
         Declaration {
@@ -1130,6 +1165,7 @@ fn emit_types(out: &mut String) {
             .map(|(index, (_, name))| ((*name).to_owned(), i32::try_from(index).unwrap_or(0))),
     );
 
+    emit_score_enums(out);
     emit_domain_enums(out);
 
     emit_enum(
@@ -1251,6 +1287,32 @@ fn emit_experience_enums(out: &mut String) {
 /// about *calling* — statuses, handles, the callback — and everything here is
 /// about the music and the licence. A reader looking for one is not made to
 /// scroll through the other.
+/// The vocabulary of a score.
+///
+/// Its own function rather than part of the domain block: a component is
+/// something a *judgement* is made of, and the domain enums are things a user
+/// agrees to or pays for. Splitting them keeps either free to grow.
+fn emit_score_enums(out: &mut String) {
+    emit_enum(
+        out,
+        "/* What part of a pairing is hardest. Numbered from one so that zero is\n         * never a component: a host reading an uninitialised value gets something\n         * it can recognise as wrong rather than \"harmonic\". */",
+        "PrvComponent",
+        "PRV_COMPONENT_FORCE_SIGNED",
+        prv_mix::transition::Component::ALL.iter().map(|component| {
+            (
+                format!(
+                    "PRV_COMPONENT_{}",
+                    component
+                        .key()
+                        .trim_start_matches("component.")
+                        .to_uppercase()
+                ),
+                prv_ffi::mapping::component_code(*component),
+            )
+        }),
+    );
+}
+
 fn emit_domain_enums(out: &mut String) {
     emit_enum(
         out,

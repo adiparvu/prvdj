@@ -17,7 +17,7 @@ I infrastructure, P presentation.
 | `music-library` | Import, metadata, playlists, collections, search, duplicates | D+A | `core/prv-library` | MS#001 |
 | `project` | Operation log, materialisation, versions, branches | D | `core/prv-project` | MP#9, MP#21, ADR-0003 |
 | `timeline` | Timeline objects, lanes, editing operations, snapping | D | `core/prv-timeline` | MP#21 |
-| `mix-engine` | Planner, transition scoring, energy curves, versions A/B/C | D | `core/prv-mix` | MP#3B, ADR-0006 |
+| `mix-engine` | Planner, transition scoring, pairwise affinity at import, energy curves, versions A/B/C | D | `core/prv-mix` | MP#3B, MP#20, ADR-0006 |
 | `learning` | Personal profile, style model, preference confidence | D | `core/prv-learning` | MP#5 |
 | `ai-orchestrator` | Task planning, agent registry, conflict resolution | A | `core/prv-ai` | MP#6, MP#19 |
 | `export` | Render, encode, metadata embedding, integrity, reports | A | `core/prv-export` | MP#3A, MP#3C |

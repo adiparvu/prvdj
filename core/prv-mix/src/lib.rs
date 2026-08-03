@@ -85,12 +85,14 @@
 mod num;
 mod pacing;
 
+pub mod affinity;
 pub mod candidate;
 pub mod goal;
 pub mod plan;
 pub mod render;
 pub mod transition;
 
+pub use affinity::{affinity, what_follows, what_precedes, Neighbour, MAX_NEIGHBOURS};
 pub use candidate::{Candidate, MixPoint, MixPointRole, TrackId};
 pub use goal::{Creativity, EnergyShape, Goal};
 pub use plan::{plan, MixPlan, PlanError, PlannedTrack};

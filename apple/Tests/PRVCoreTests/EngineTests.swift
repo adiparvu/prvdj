@@ -293,6 +293,51 @@ struct PlannerTests {
         }
     }
 
+    @Test("a record's neighbours are ranked, explained, and different each way round")
+    func neighbours() throws {
+        let planner = try Planner()
+        try library(planner)
+
+        let after = try planner.neighbours(of: 0, .following, limit: 5)
+        #expect(after.count == 5)
+        #expect(!after.contains { $0.track == 0 }, "a record was its own neighbour")
+
+        // Ranked best first, and each row explains itself.
+        for (earlier, later) in zip(after, after.dropFirst()) {
+            #expect(earlier.score >= later.score, "the ranking was not sorted")
+        }
+        #expect(after.allSatisfy { (0...1).contains($0.score) })
+        #expect(after.allSatisfy { !$0.weakest.key.isEmpty })
+
+        // The other direction is a different question, so it may well be a
+        // different answer. What must hold is that it is still a valid one.
+        let before = try planner.neighbours(of: 0, .preceding, limit: 5)
+        #expect(before.count == 5)
+        #expect(!before.contains { $0.track == 0 })
+    }
+
+    @Test("asking about a record nobody imported is refused, not answered emptily")
+    func neighboursOfAnUnknownRecord() throws {
+        // "Nothing goes with this" and "I have never heard of this" are
+        // different answers, and only one of them is true.
+        let planner = try Planner()
+        try library(planner)
+
+        #expect(throws: EngineError.invalidArgument) {
+            _ = try planner.neighbours(of: 9_999)
+        }
+    }
+
+    @Test("the same library always ranks the same way")
+    func neighboursAreDeterministic() throws {
+        let planner = try Planner()
+        try library(planner)
+
+        let first = try planner.neighbours(of: 3, .following, limit: 6)
+        let second = try planner.neighbours(of: 3, .following, limit: 6)
+        #expect(first == second)
+    }
+
     @Test("a library plans a set that can be read back as a tracklist")
     func planAndRead() throws {
         let planner = try Planner()

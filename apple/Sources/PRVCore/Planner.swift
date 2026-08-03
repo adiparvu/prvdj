@@ -305,8 +305,116 @@ public final class Planner {
     /// nothing in the document that says which placements a person made and
     /// which the planner did — which is what makes a generated mix editable
     /// rather than merely promised to be.
+    // MARK: - Neighbours
+
+    /// Which way round to ask.
+    public enum Direction: Sendable {
+        /// What mixes out of this record.
+        case following
+        /// What mixes into it.
+        ///
+        /// Genuinely a different list. Every component that depends on
+        /// direction — tempo, level, structure, energy continuity — is measured
+        /// the other way round, so a record that follows this one beautifully
+        /// may lead into it badly.
+        case preceding
+    }
+
+    /// The records that sit best beside a given one.
+    ///
+    /// Answers "what goes with this?" without a set. Different from planning: a
+    /// plan judges a move against where the evening is going, and this judges
+    /// the pair. Records whose keys clash are not in the list at all.
+    public func neighbours(
+        of track: UInt64,
+        _ direction: Direction = .following,
+        limit: UInt64 = 8
+    ) throws -> [Neighbour] {
+        var count: UInt64 = 0
+        try EngineError.check(
+            prv_planner_neighbours(
+                handle,
+                track,
+                direction == .following ? 1 : 0,
+                limit,
+                &count
+            )
+        )
+        return try (0..<count).map { index in
+            var found: UInt64 = 0
+            var score: Float = 0
+            var weakest: Int32 = 0
+            try EngineError.check(
+                prv_planner_neighbour(handle, index, &found, &score, &weakest)
+            )
+            return Neighbour(
+                track: found,
+                score: score,
+                weakest: ScoreComponent(code: weakest)
+            )
+        }
+    }
+
     public func apply(to engine: Engine, timestamp: Date = Date()) throws {
         let micros = Int64(timestamp.timeIntervalSince1970 * 1_000_000)
         try EngineError.check(prv_planner_apply(handle, engine.rawHandle, micros))
     }
+}
+
+
+/// What part of a pairing is hardest.
+///
+/// Written out rather than derived from the raw values so that a component added
+/// to the boundary is a compile error here rather than a silent `unknown`.
+public enum ScoreComponent: Sendable, Equatable {
+    case harmonic
+    case tempo
+    case energy
+    case structure
+    case level
+    case vocal
+    /// A component this build of the wrapper does not know.
+    case unrecognised(code: Int32)
+
+    init(code: Int32) {
+        self =
+            switch code {
+            case PRV_COMPONENT_HARMONIC.rawValue: .harmonic
+            case PRV_COMPONENT_TEMPO.rawValue: .tempo
+            case PRV_COMPONENT_ENERGY.rawValue: .energy
+            case PRV_COMPONENT_STRUCTURE.rawValue: .structure
+            case PRV_COMPONENT_LEVEL.rawValue: .level
+            case PRV_COMPONENT_VOCAL.rawValue: .vocal
+            default: .unrecognised(code: code)
+            }
+    }
+
+    /// A stable identifier, for localisation.
+    ///
+    /// Not display text. Prose here would put translations in the layer that
+    /// wraps the core, which is not where they belong.
+    public var key: String {
+        switch self {
+        case .harmonic: "component.harmonic"
+        case .tempo: "component.tempo"
+        case .energy: "component.energy"
+        case .structure: "component.structure"
+        case .level: "component.level"
+        case .vocal: "component.vocal"
+        case .unrecognised(let code): "component.unrecognised.\(code)"
+        }
+    }
+}
+
+/// One record's fit beside another.
+public struct Neighbour: Sendable, Equatable {
+    /// Which record.
+    public let track: UInt64
+    /// The weighted total, zero to one.
+    public let score: Float
+    /// What costs this pairing the most.
+    ///
+    /// What an interface says out loud. A DJ told "0.71" learns nothing; a DJ
+    /// told "the tempo is the hard part here" knows what to do about it.
+    public let weakest: ScoreComponent
 }

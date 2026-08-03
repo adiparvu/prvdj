@@ -114,7 +114,11 @@ did not have would be worse than no row at all.
 | Sections usable as transition points | MP#3B, MP#21 | `prv-analysis::Structure::transition_points` | `the_quiet_sections_are_recognised_as_places_to_mix` | **Verified** |
 | Each analysis stage versioned independently | MP#20 | `prv-analysis::Stage::version` | `staleness_propagates_to_everything_downstream`, `the_dependency_order_has_no_cycles_and_matches_the_run_order` | **Verified** |
 | A stage that finds nothing says so | MP#25 | `prv-analysis::TrackProfile` | `a_stage_that_finds_nothing_is_absent_rather_than_uncertain`, `a_partial_analysis_is_a_success_not_a_failure` | **Verified** |
-| Transition scoring at import | MP#20 | — | — | Not started |
+| Transition scoring at import | MP#20 | `prv-mix::affinity` | `the_best_neighbour_of_a_mixed_library_is_the_one_a_dj_would_pick`, `a_closer_tempo_is_a_better_neighbour` | **Verified** |
+| A pairing is judged in the direction it is played | MP#20, MP#3B | `prv-mix::affinity` | `the_two_directions_are_different_questions`, `what_follows_and_what_precedes_report_the_other_record` | **Verified** |
+| A shortlist never promises more than a set can deliver | MP#20, ADR-0006 | `prv-mix::affinity` | `no_plan_scores_a_pair_higher_on_tempo_than_affinity_does` | **Verified** |
+| Unlistenable pairings are absent, not ranked last | MP#20 | `prv-mix::affinity` | `keys_that_clash_are_not_neighbours_at_all`, `an_unknown_key_is_not_treated_as_a_clash` | **Verified** |
+| A shortlist is stable between identical questions | MP#20, MP#15 | `prv-mix::affinity::rank` | `the_same_library_always_gives_the_same_answer`, `the same library always ranks the same way` | **Verified** |
 | Mix planner | MP#3B, ADR-0006 | `prv-mix::plan` | `a_plan_reaches_the_requested_length_without_repeating_a_track`, `a_set_moves_forward_by_one_handover_at_a_time` | **Verified** |
 | A plan is as long as it renders | MP#3B, MP#12 | `prv-mix::pacing` | `a_rendered_set_is_as_long_as_the_plan_said_it_would_be`, `the_planner_and_the_renderer_agree_about_where_a_record_hands_over` | **Verified** |
 | A set that falls short says so | MP#3B, MP#12 | `prv-mix::MixPlan::duration_error` | `a_short_set_is_reported_as_short_rather_than_as_a_perfect_match` | **Verified** |

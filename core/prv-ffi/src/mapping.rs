@@ -20,6 +20,7 @@
 //! rules are the same rule ADR-0003 applies to the operation log, for the same
 //! reason: somebody out there has the old number written down.
 
+use prv_mix::transition::Component;
 use prv_transport::{PlaybackState, TransportEvent};
 
 /// The ABI code for a playback state.
@@ -101,6 +102,24 @@ pub const TRANSPORT_EVENTS: &[(TransportEvent, &str)] = &[
     (TransportEvent::Fault, "PRV_EVENT_FAULT"),
     (TransportEvent::Reset, "PRV_EVENT_RESET"),
 ];
+
+/// Names a score component as an ABI code.
+///
+/// Numbered from one so that zero is never a component. A host that reads an
+/// uninitialised value gets something it can recognise as wrong rather than
+/// "harmonic", which is the kind of mistake that reaches a screen and is
+/// believed.
+#[must_use]
+pub const fn component_code(component: Component) -> i32 {
+    match component {
+        Component::Harmonic => 1,
+        Component::Tempo => 2,
+        Component::Energy => 3,
+        Component::Structure => 4,
+        Component::Level => 5,
+        Component::Vocal => 6,
+    }
+}
 
 #[cfg(test)]
 mod tests {

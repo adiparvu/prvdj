@@ -36,7 +36,10 @@
 
 use prv_analysis::Confidence;
 use prv_harmony::{Key, PitchClass};
-use prv_mix::{Candidate, Creativity, EnergyShape, Goal, MixPlan, PlacementIds, TrackId};
+use prv_mix::transition::Weights;
+use prv_mix::{
+    affinity, Candidate, Creativity, EnergyShape, Goal, MixPlan, Neighbour, PlacementIds, TrackId,
+};
 use prv_time::{Frames, SampleRate, Tempo};
 
 use crate::status::Status;
@@ -59,6 +62,9 @@ pub const WANTED_PLANS: usize = 3;
 pub struct Planner {
     candidates: Vec<Candidate>,
     plans: Vec<MixPlan>,
+    /// The answer to the last "what goes with this?", held so a host can read
+    /// it one row at a time without the core ranking a library per row.
+    neighbours: Vec<Neighbour>,
     /// Which of `plans` a host is currently reading.
     selected: usize,
 }
@@ -70,6 +76,7 @@ impl Planner {
         Self {
             candidates: Vec::new(),
             plans: Vec::new(),
+            neighbours: Vec::new(),
             selected: 0,
         }
     }
@@ -202,8 +209,59 @@ impl Planner {
         self.candidates.len().try_into().unwrap_or(u64::MAX)
     }
 
+    /// The records that sit best after — or before — a given one.
+    ///
+    /// # Why this is on the planner rather than on the collection
+    ///
+    /// It needs the same facts a plan needs: tempo, key, energy, level, and
+    /// where a record can be mixed. The planner's library already holds exactly
+    /// those, assembled by exactly the calls that assemble them for planning. A
+    /// second path would mean a second place for a host to describe its records,
+    /// and the two would drift.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidArgument`] when `track` is not in the library, which is
+    /// worth reporting rather than answering with an empty list: "nothing goes
+    /// with this" and "I have never heard of this" are different answers.
+    pub fn neighbours(&mut self, track: u64, following: bool, limit: u64) -> Result<usize, Status> {
+        let subject = self
+            .candidates
+            .iter()
+            .find(|candidate| candidate.id() == TrackId::new(track))
+            .ok_or(Status::InvalidArgument)?;
+
+        let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+        self.neighbours = if following {
+            affinity::what_follows(subject, &self.candidates, Weights::DEFAULT, limit)
+        } else {
+            affinity::what_precedes(subject, &self.candidates, Weights::DEFAULT, limit)
+        };
+        Ok(self.neighbours.len())
+    }
+
+    /// One neighbour from the last call to [`Planner::neighbours`].
+    ///
+    /// Returns the record, its total, and the component that costs the pairing
+    /// the most — because a DJ told "0.71" learns nothing and a DJ told "the
+    /// tempo is the hard part" knows what to do about it.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidArgument`] for an index past the end.
+    pub fn neighbour(&self, index: u64) -> Result<(u64, f32, i32), Status> {
+        let index = usize::try_from(index).map_err(|_| Status::InvalidArgument)?;
+        let found = self.neighbours.get(index).ok_or(Status::InvalidArgument)?;
+        Ok((
+            found.track().get(),
+            found.score(),
+            crate::mapping::component_code(found.weakest()),
+        ))
+    }
+
     /// Forgets the library and any plan made from it.
     pub fn clear(&mut self) {
+        self.neighbours.clear();
         self.candidates.clear();
         self.plans.clear();
         self.selected = 0;

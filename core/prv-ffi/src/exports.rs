@@ -911,6 +911,77 @@ pub unsafe extern "C" fn prv_planner_apply(
     .code()
 }
 
+/// Ranks the records that sit best after — or before — a given one.
+///
+/// Answers "what mixes out of this?" without a set, which is the question a
+/// person asks at import and every time they look at a record and wonder. It is
+/// a different question from planning: a plan judges a move against where the
+/// evening is going, and this judges the pair.
+///
+/// `following` non-zero asks what comes *after* `track`; zero asks what comes
+/// *before*. They are genuinely different lists — every component that depends
+/// on direction is measured the other way round.
+///
+/// Writes how many were found to `out_count`, then read them with
+/// [`prv_planner_neighbour`]. Records whose keys clash with `track` are not in
+/// the list at all: that is a musical fact rather than a preference, and a list
+/// that ranked unlistenable moves at the bottom would be one nobody could trust
+/// the top of.
+///
+/// # Safety
+///
+/// `planner` must be live and `out_count` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_neighbours(
+    planner: *mut Planner,
+    track: u64,
+    following: i32,
+    limit: u64,
+    out_count: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let planner = unsafe { as_mut(planner) }?;
+        let found = planner.neighbours(track, following != 0, limit)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_count) }? = found.try_into().unwrap_or(u64::MAX);
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads one row of the last ranking.
+///
+/// `out_weakest` receives the component that costs the pairing the most, as a
+/// `PrvComponent`. It is what an interface says out loud: a DJ told "0.71"
+/// learns nothing, and a DJ told "the tempo is the hard part here" knows what to
+/// do about it.
+///
+/// # Safety
+///
+/// `planner` must be live and every out-pointer writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_planner_neighbour(
+    planner: *const Planner,
+    index: u64,
+    out_track: *mut u64,
+    out_score: *mut f32,
+    out_weakest: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let (track, score, weakest) = unsafe { as_ref(planner) }?.neighbour(index)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_track) }? = track;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_score) }? = score;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_weakest) }? = weakest;
+        Ok(())
+    })
+    .code()
+}
+
 // ---------------------------------------------------------------------------
 // Analysis
 //

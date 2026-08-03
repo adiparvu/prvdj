@@ -319,6 +319,44 @@ int main(void) {
 
     prv_engine_destroy(peer);
 
+    /* "What goes with this?" — asked of a library, without a set. */
+    PrvPlanner *shelf = NULL;
+    CHECK(prv_planner_create(&shelf) == PRV_OK, "the planner would not start");
+    for (uint64_t index = 0; index < 6; index += 1) {
+        CHECK(prv_planner_add_candidate(shelf, index, 48000 * 300, 128.0 + (double)(index % 3),
+                                        0.5f, 9, 1, 1.0f, -8.0f, 0) == PRV_OK,
+              "a record would not go into the library");
+    }
+
+    uint64_t found = 0;
+    CHECK(prv_planner_neighbours(shelf, 0, 1, 4, &found) == PRV_OK, "the ranking failed");
+    CHECK(found == 4, "the ranking did not honour the limit asked for");
+
+    double previous = 2.0;
+    for (uint64_t index = 0; index < found; index += 1) {
+        uint64_t neighbour_track = 0;
+        float neighbour_score = 0.0f;
+        int32_t weakest = 0;
+        CHECK(prv_planner_neighbour(shelf, index, &neighbour_track, &neighbour_score,
+                                    &weakest) == PRV_OK,
+              "a ranked row could not be read");
+        CHECK(neighbour_track != 0, "a record was returned as its own neighbour");
+        CHECK(neighbour_score >= 0.0f && neighbour_score <= 1.0f, "a score left its range");
+        CHECK((double)neighbour_score <= previous, "the ranking was not sorted");
+        CHECK(weakest >= PRV_COMPONENT_HARMONIC && weakest <= PRV_COMPONENT_VOCAL,
+              "the weakest component is not one this header defines");
+        previous = (double)neighbour_score;
+    }
+
+    /* Asking about a record nobody imported is refused, not answered emptily. */
+    CHECK(prv_planner_neighbours(shelf, 9999, 1, 4, &found) == PRV_INVALID_ARGUMENT,
+          "a record nobody imported was ranked anyway");
+    float spare_score = 0.0f;
+    CHECK(prv_planner_neighbour(shelf, 999, &placement, &spare_score, &state)
+              == PRV_INVALID_ARGUMENT,
+          "a row past the end was read");
+    prv_planner_destroy(shelf);
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");
