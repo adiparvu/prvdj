@@ -1,0 +1,171 @@
+# The Xcode project, as a text file.
+#
+# # Why this is a specification rather than an .xcodeproj
+#
+# `project.pbxproj` is a generated format with opaque identifiers, no meaningful
+# diff, and a well-earned reputation for merge conflicts that take an afternoon.
+# It is a build artefact that happens to be committed by convention.
+#
+# So it is not committed. This file is the source, XcodeGen produces the project
+# from it, and the project is disposable — which also means a reviewer can see
+# what changed in a build setting, which is the part that actually matters.
+#
+# # Why an Xcode project at all, when SwiftPM already builds everything
+#
+# `swift build` produces an executable. TestFlight takes an *application*: a
+# bundle with an Info.plist, an icon, a privacy manifest, an embedded provisioning
+# profile and a signature. SwiftPM does not make one and is not trying to.
+#
+# The two build systems read the same source directories, so a file added to
+# `Sources/PRVCore` appears in both without anybody remembering. The package
+# stays because it is what the Linux job tests on every commit; this stays
+# because it is what ships.
+#
+# # Requires
+#
+#   brew install xcodegen && cd apple && xcodegen generate
+#
+# after `tools/build-apple-libraries.sh` has produced the framework.
+
+name: PRVStudio
+options:
+  bundleIdPrefix: studio.prv
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  # A stale project is worse than none: it builds, and it builds the wrong
+  # thing.
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    # Complete checking, not minimal. The concurrency rules are the reason
+    # `RenderHandle` exists — the audio thread may hold one and nothing else —
+    # and a lower setting would let that rule become a comment again.
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+    DEAD_CODE_STRIPPING: true
+    CLANG_ENABLE_MODULES: true
+    # Set by continuous integration from the run number, so two uploads can
+    # never claim to be the same build.
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.0"
+  configs:
+    release:
+      SWIFT_COMPILATION_MODE: wholemodule
+      GCC_OPTIMIZATION_LEVEL: s
+
+packages: {}
+
+targets:
+  # ---------------------------------------------------------------------------
+  # The core, as Swift sees it. Built once per platform from the same sources
+  # the Linux job tests.
+  # ---------------------------------------------------------------------------
+  PRVCore:
+    type: framework
+    platform: [macOS, iOS]
+    sources:
+      - path: Sources/PRVCore
+    dependencies:
+      - framework: PRVKit/Bridge/Generated/PRVBridge.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.prv.aidj.core_${PLATFORM_NAME}
+        DEFINES_MODULE: true
+
+  PRVKit:
+    type: framework
+    platform: [macOS, iOS]
+    sources:
+      - path: Sources/PRVKit
+    dependencies:
+      - target: PRVCore_${platform}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.prv.aidj.kit_${PLATFORM_NAME}
+        DEFINES_MODULE: true
+
+  PRVUI:
+    type: framework
+    platform: [macOS, iOS]
+    sources:
+      - path: Sources/PRVUI
+    dependencies:
+      - target: PRVCore_${platform}
+      - target: PRVKit_${platform}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: studio.prv.aidj.ui_${PLATFORM_NAME}
+        DEFINES_MODULE: true
+
+  # ---------------------------------------------------------------------------
+  # The applications.
+  # ---------------------------------------------------------------------------
+  PRVStudio:
+    type: application
+    platform: [macOS, iOS]
+    sources:
+      - path: Sources/PRVStudio
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    dependencies:
+      - target: PRVCore_${platform}
+        embed: true
+      - target: PRVKit_${platform}
+        embed: true
+      - target: PRVUI_${platform}
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: PRV AI DJ Studio
+        PRODUCT_BUNDLE_IDENTIFIER: studio.prv.aidj
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Signing is left to whatever runs the build. A team identifier
+        # committed here would be a credential in the repository, which
+        # Master Prompt #26 forbids and architecture rule 8 checks for.
+        CODE_SIGN_STYLE: Manual
+    platforms:
+      macOS:
+        settings:
+          base:
+            INFOPLIST_FILE: Resources/Info.plist
+            CODE_SIGN_ENTITLEMENTS: Resources/PRVStudio.entitlements
+            ENABLE_HARDENED_RUNTIME: true
+            LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+      iOS:
+        settings:
+          base:
+            INFOPLIST_FILE: Resources/Info-iOS.plist
+            # No entitlements file, deliberately. iOS is sandboxed
+            # unconditionally and there is no key to set — which also means the
+            # operating system does *not* gate outbound network access the way
+            # the macOS sandbox does. See section 8 of the known limitations:
+            # on iOS, "nothing leaves the device" rests on our code being
+            # correct rather than on the platform making it impossible.
+            TARGETED_DEVICE_FAMILY: "1,2"
+            LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+
+schemes:
+  PRVStudio-macOS:
+    build:
+      targets:
+        PRVStudio_macOS: all
+    run:
+      config: debug
+    archive:
+      config: release
+  PRVStudio-iOS:
+    build:
+      targets:
+        PRVStudio_iOS: all
+    run:
+      config: debug
+    archive:
+      config: release

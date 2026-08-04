@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- app-store-connect is what TestFlight distribution needs; `developer-id`
+         would produce something notarised for direct download instead, which is
+         a different product decision and a different signing identity. -->
+    <key>method</key>
+    <string>app-store-connect</string>
+
+    <!-- Left to whatever runs the build. A team identifier committed here would
+         be an organisation's identity sitting in a public repository, and
+         `xcodebuild` accepts it on the command line for exactly this reason. -->
+    <key>teamID</key>
+    <string>$(DEVELOPMENT_TEAM)</string>
+
+    <!-- The symbols, so a crash report from a tester names a function rather
+         than an address. Nothing about the user reaches Apple through this;
+         it is a map of our own binary. -->
+    <key>uploadSymbols</key>
+    <true/>
+
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <!-- Bitcode has been withdrawn by Apple; stating it explicitly stops a
+         future toolchain default from quietly changing what is uploaded. -->
+    <key>uploadBitcode</key>
+    <false/>
+</dict>
+</plist>

@@ -25,3 +25,6 @@ build/
 # Editors
 .idea/
 .vscode/
+
+# Python bytecode from the icon generator.
+__pycache__/

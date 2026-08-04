@@ -172,6 +172,11 @@ did not have would be worse than no row at all.
 | Two devices never name the same placement | MP#24, ADR-0003 | `prv-ffi::Engine::allocate_placements` | `two_devices_never_name_the_same_placement`, `both sides end up with the same project, and neither is in charge` | **Verified** |
 | A device identity is declared by the host | MP#24, ADR-0001 | `prv-ffi::Engine::set_device` | `an identity is required to be plausible and cannot change underneath a log` | **Verified** |
 | A repeated delivery is recognised, not duplicated | MP#24 | `prv-project::MergeReport::already_present` | `sending_the_same_bytes_twice_costs_nothing`, `a message delivered twice is recognised rather than applied twice` | **Verified** |
+| The icon is generated, never hand-drawn | MP#17, MP#28 | `tools/icongen.py` | architecture rule 11, verified against three drift modes | **Enforced** |
+| No entitlements file grants the network | MP#26 | `tools/check-architecture.sh` | architecture rule 10, verified against a deliberate second file | **Enforced** |
+| No signing material is committed | MP#26 | `.github/workflows/release.yml` | architecture rule 8; every credential is a repository secret | **Enforced** |
+| The privacy manifest states what is collected | MP#26 | `apple/Resources/PrivacyInfo.xcprivacy` | inspection — every array empty, each for a stated reason | **Verified** |
+| A release is reproducible from a text specification | MP#28 | `apple/project.yml`, `tools/build-apple-libraries.sh` | — | Authored, never run |
 | The core never opens a socket | ADR-0001, MP#26 | `prv-ffi::exports` sync calls | architecture rule 1; the host carries every byte | **Enforced** |
 | The project refers to media, never contains it | MP#29, ADR-0003 | `prv-project::TrackRef` | structural — a placement holds a reference | **Verified** |
 | Offline-first | MP#1, MP#24 | ADR-0001, ADR-0006 | the core has no network dependency, enforced by rule 1 | **Enforced** |

@@ -91,7 +91,35 @@ and architecture rule 10 keeps it that way. It arrives in the same commit as the
 consent screen it depends on — deliberately, so that the operating system makes
 an outbound connection impossible until the user has been asked.
 
-## 7. No screen has been drawn
+## 7. On iOS, the platform does not enforce the privacy promise
+
+The most important thing to come out of adding iOS, and it is a genuine loss
+rather than a detail.
+
+On macOS the guarantee is structural. The sandbox has no
+`com.apple.security.network.client` entitlement, so an outbound connection is
+*impossible* — not unused, not guarded by our code being right, impossible.
+Architecture rule 10 keeps that key absent, and Master Prompt #26's promise rests
+on the operating system rather than on us.
+
+**iOS has no such entitlement.** Network access there is not gated by anything an
+application declares; every iOS application can open a socket. So on iOS the same
+promise is only as good as `prv-security` deciding correctly and every call site
+consulting it — which is a much weaker thing, and it would be dishonest to
+present the two platforms as offering the same assurance.
+
+What is still true on both: the core performs no input or output at all
+(ADR-0001), so there is no code path in it that could open a connection; the
+privacy manifest declares no collection; and consent is required before anything
+is sent. What is not true on iOS is that the platform would stop us if we were
+wrong.
+
+The mitigation worth building, when there is a transport: route every outbound
+call through one audited place, so "did anything leave?" is a question about one
+file rather than about the whole application. That is not a substitute for the
+entitlement, and this section should not be removed when it ships.
+
+## 8. No screen has been drawn
 
 Narrower than it used to read, and the difference is worth stating rather than
 leaving as a stale sentence. This section said "nothing user-facing exists", and

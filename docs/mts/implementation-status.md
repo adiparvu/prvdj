@@ -768,6 +768,67 @@ variant to zero rather than to a plausible-looking state, and a test walks
 An unmapped variant is a failing test rather than a silent lie on somebody's
 screen. `SyncEvent::ALL` was added for exactly that purpose.
 
+### Sprint 43 — what a build needs to become an application
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `tools/build-apple-libraries.sh` | Completed | **Authored, never run** | Five target triples, two `lipo` merges, one `.xcframework` |
+| `apple/project.yml` | Completed | **Authored, never run** | XcodeGen specification; the `.xcodeproj` is disposable |
+| `Info-iOS.plist` | Completed | **Authored, never run** | Background audio, document sharing, no microphone entry |
+| `PrivacyInfo.xcprivacy` | Completed | Verified by inspection | Every array empty, and each empty for a stated reason |
+| `Assets.xcassets` with a generated icon | Completed | **Verified** | Drawn from the design tokens; rule 11 keeps it current |
+| `ExportOptions` for both platforms | Completed | **Authored, never run** | Manual signing; no team identifier committed |
+| `.github/workflows/release.yml` | Completed | **Authored, never run** | Archive, export, upload with an App Store Connect API key |
+| Architecture rule 10, widened | Completed | **Enforced** | Every entitlements file, not one by name |
+| Architecture rule 11 — the icon matches the tokens | Completed | **Enforced** | Verified against three separate drift modes |
+| `CoreAudioOutput` buffer leak | Fixed | **Authored, never run** | One block per start-and-stop; found while adding iOS |
+| `AVAudioSession` for iOS | Completed | **Authored, never run** | Without it the default category is silenced by the ring switch |
+
+**The gap between a package and an application.** `swift build` produces an
+executable; TestFlight takes a bundle with an Info.plist, an icon, a privacy
+manifest, an embedded profile and a signature. So there are now two build
+systems over one source tree — the package, which Linux tests on every commit,
+and an Xcode project, which ships. Both read the same directories, so a new file
+appears in both without anybody remembering.
+
+**The icon is generated from the design tokens**, for the same reason the C
+header is generated from the boundary: a second source of truth drifts quietly.
+The accent in the dock is the same value as the accent in the interface, by
+construction. Rule 11 hashes the tokens, the generator and the images, and it
+has been run against all three ways that can go wrong.
+
+Rule 11 was also rewritten once during the sprint. Its first form re-rendered
+the whole set to compare — sixteen megapixels of interpreted Python, about a
+minute on every commit. A check nobody will wait for is a check that gets
+skipped, so it compares a manifest instead: milliseconds, and it catches
+strictly more, because a hand-edited image fails it too.
+
+**Two defects surfaced by adding iOS**, both in never-compiled code. The audio
+output allocated a render scratch buffer and freed it only on the error path, so
+every successful start-and-stop leaked one block. And `AVAudioSession` was never
+configured, which on iOS means the default `.soloAmbient` category — silenced by
+the ring switch, stopped in the background. A DJ application that goes quiet
+when somebody answers a message is not a DJ application.
+
+**What none of this is: verified.** No part of the pipeline has run, and the code
+it packages has never been compiled either. The first `macos-14` run will meet
+both at once. That is recorded plainly in
+[16-deployment.md](16-deployment.md) rather than smoothed over, because the
+distance between "authored" and "working" is exactly what this document exists
+to keep visible.
+
+### The promise iOS cannot make
+
+On macOS, "nothing leaves the device" is enforced by the absence of an
+entitlement: without `com.apple.security.network.client` the sandbox makes an
+outbound connection impossible, and rule 10 keeps it absent.
+
+iOS has no such entitlement. Network access is not gated by anything an
+application declares. So on iOS the same promise rests on our code being correct
+rather than on the platform making failure impossible — a materially weaker
+assurance, recorded as [known limitation 7](17-known-limitations.md) rather than
+presented as equivalent.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

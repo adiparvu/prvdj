@@ -1,0 +1,187 @@
+# Builds the applications and puts them in front of testers.
+#
+# # Why this is a separate workflow
+#
+# `ci.yml` answers "is this commit sound?" and runs on every push. This answers
+# "should people have this?", which is a decision rather than a check — so it
+# runs when somebody asks, or when a version tag says a release was intended.
+#
+# # What it needs that a repository must never contain
+#
+# Signing is an organisation's identity. None of it is committed; all of it
+# arrives as repository secrets, which is what architecture rule 8 checks the
+# repository for the absence of:
+#
+#   APPLE_TEAM_ID                  the ten-character team identifier
+#   APPLE_CERTIFICATE_P12          the distribution certificate, base64
+#   APPLE_CERTIFICATE_PASSWORD     its passphrase
+#   APPLE_PROVISIONING_MACOS       the macOS profile, base64
+#   APPLE_PROVISIONING_IOS         the iOS profile, base64
+#   APP_STORE_CONNECT_KEY_ID       the API key identifier
+#   APP_STORE_CONNECT_ISSUER_ID    the issuer identifier
+#   APP_STORE_CONNECT_KEY_P8       the API private key, base64
+#
+# An API key rather than an Apple ID and password: a password in a workflow is a
+# password that has to be rotated by hand and cannot be scoped, and this one can
+# be limited to uploading builds.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Which application to build
+        required: true
+        default: both
+        type: choice
+        options: [macos, ios, both]
+  push:
+    tags: ["v*"]
+
+# Two uploads must never claim to be the same build; App Store Connect rejects
+# the second, and finding out at the upload is finding out late.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Everything below depends on this, and it is also the first thing that
+      # can fail for a reason worth reading: five target triples, two lipo
+      # merges and a framework.
+      - name: Build the core for every Apple architecture
+        run: bash tools/build-apple-libraries.sh
+
+      # A release that shipped a header the library no longer matches would
+      # compile, link, run and show the wrong thing. Rule 9 is cheap; a
+      # mismatched boundary in a tester's hands is not.
+      - name: The bindings match the boundary
+        run: bash tools/check-architecture.sh
+
+      - name: Generate the Xcode project
+        working-directory: apple
+        run: xcodegen generate
+
+      # The signing material, in a keychain that exists for this job and is
+      # deleted with the runner. Never written to the workspace.
+      - name: Install the signing identity
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROVISIONING_MACOS: ${{ secrets.APPLE_PROVISIONING_MACOS }}
+          PROVISIONING_IOS: ${{ secrets.APPLE_PROVISIONING_IOS }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(uuidgen)"
+
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain"
+          security list-keychain -d user -s "$keychain"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+          profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$profiles"
+          echo "$PROVISIONING_MACOS" | base64 --decode > "$profiles/macos.provisionprofile"
+          echo "$PROVISIONING_IOS" | base64 --decode > "$profiles/ios.mobileprovision"
+
+      # The build number is the run number, so it rises on its own and two
+      # uploads cannot collide. The marketing version stays where the Info.plist
+      # put it: it is a product decision, not a counter.
+      - name: Number the build
+        run: echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Archive and export macOS
+        if: inputs.platform != 'ios'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project apple/PRVStudio.xcodeproj \
+            -scheme PRVStudio-macOS \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/PRVStudio-macOS.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PRVStudio-macOS.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export-macos" \
+            -exportOptionsPlist apple/Resources/ExportOptions-macOS.plist \
+            DEVELOPMENT_TEAM="$TEAM"
+
+      - name: Archive and export iOS
+        if: inputs.platform != 'macos'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project apple/PRVStudio.xcodeproj \
+            -scheme PRVStudio-iOS \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PRVStudio-iOS.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PRVStudio-iOS.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export-ios" \
+            -exportOptionsPlist apple/Resources/ExportOptions-iOS.plist \
+            DEVELOPMENT_TEAM="$TEAM"
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          keys="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$keys"
+          echo "$KEY_P8" | base64 --decode > "$keys/AuthKey_${KEY_ID}.p8"
+
+          shopt -s nullglob
+          for package in "$RUNNER_TEMP"/export-*/*.ipa "$RUNNER_TEMP"/export-*/*.pkg; do
+            echo "Uploading $(basename "$package")"
+            xcrun altool --upload-app \
+              --type "$([[ "$package" == *.ipa ]] && echo ios || echo macos)" \
+              --file "$package" \
+              --apiKey "$KEY_ID" \
+              --apiIssuer "$ISSUER_ID"
+          done
+
+          rm -f "$keys/AuthKey_${KEY_ID}.p8"
+
+      # Kept whatever happened above: an archive from a failed export is the
+      # thing somebody needs in order to find out why.
+      - name: Keep the archives
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archives
+          path: ${{ runner.temp }}/*.xcarchive
+          retention-days: 14
+          if-no-files-found: ignore

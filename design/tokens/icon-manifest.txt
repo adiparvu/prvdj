@@ -1,0 +1,16 @@
+# Written by tools/icongen.py. Checked by tools/check-architecture.sh.
+#
+# The icon is generated from the design tokens, so three things have to
+# agree: the colours it was drawn from, the code that drew it, and the
+# images themselves. Any one of them moving without the others is drift.
+
+tokens 2790e142ac3c3c13d481567e8980b04f772aa753afc7858aca45d508af8ed8c7
+generator 5eb20a50f260db8aab0b407fa3984c8f8ba59684428d4e67a6511edd764e71a3
+image ios-1024.png b4436a549e24aee7a89aecc13242ea9666d7f49737ece096906b4618acc43a0f
+image mac-1024.png 0fc106080bc99e6058ea95236dc418bdc3187ced2530e08cbf902b5c4da2ac21
+image mac-128.png 8c882f9332ca86766965fcce52985111c634bd685165ea52b9ae30454280c6de
+image mac-16.png 43243278b086bdbe54a54f631b992bc8604faf387087949f70b04d5a60130b96
+image mac-256.png acd03f87cf3c26341cc6dedc63efa54684e880c166d626df391a0317c8dad664
+image mac-32.png 2c5cde1887ed9a9970ffba0efc79f1b269f10f53930710320a15c2d673db1266
+image mac-512.png 197e620fa7e2f751970c006b6cd4aca98e26f6c2fe2fe4fca7d7a9141c58af0e
+image mac-64.png 1036fd5b9374b632a2d1cc4364dde838645373ceb5bb347552a66fc9dc7f049d

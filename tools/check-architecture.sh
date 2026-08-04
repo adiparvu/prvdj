@@ -290,20 +290,30 @@ printf '\n'
 # on, and that commit changes this rule deliberately rather than quietly.
 # ---------------------------------------------------------------------------
 entitlements="apple/Resources/PRVStudio.entitlements"
+granted=""
+# Every entitlements file, not just the one named above. A second target — an
+# extension, another platform, a helper — arrives with its own file, and a rule
+# that checked one by name would watch the wrong door.
+while IFS= read -r candidate; do
+    # XML comments are stripped before matching, for the same reason Rule 2
+    # strips `//`: these files *explain* why the network key is absent, and a
+    # scanner that also read the prose would make documenting the guarantee into
+    # a build failure. That would train authors to stop explaining it, which is
+    # the opposite of what the rule is for.
+    if sed 's/<!--.*-->//; /<!--/,/-->/d' "$candidate" \
+        | grep -q "com.apple.security.network.client"; then
+        granted="$granted $candidate"
+    fi
+done < <(find apple -name "*.entitlements" -type f 2>/dev/null)
+
 if [ ! -f "$entitlements" ]; then
     fail "the entitlements file is missing: $entitlements"
-# XML comments are stripped before matching, for the same reason Rule 2 strips
-# `//`: this file *explains* why the network key is absent, and a scanner that
-# also read the prose would make documenting the guarantee into a build failure.
-# That would train authors to stop explaining it, which is the opposite of what
-# the rule is for.
-elif sed 's/<!--.*-->//; /<!--/,/-->/d' "$entitlements" \
-    | grep -q "com.apple.security.network.client"; then
-    fail "$entitlements grants network access; MP#26's promise is then only as good as our code"
+elif [ -n "$granted" ]; then
+    fail "these grant network access:$granted; MP#26's promise is then only as good as our code"
 elif ! grep -q "com.apple.security.app-sandbox" "$entitlements"; then
     fail "$entitlements does not enable the sandbox"
 else
-    pass "the sandbox cannot reach the network"
+    pass "no sandbox can reach the network"
 fi
 
 # ---------------------------------------------------------------------------
@@ -329,6 +339,36 @@ elif (cd core && cargo run -q -p prv-ffi --bin bridgegen -- --check "../$bridge_
     pass "generated bindings match the boundary"
 else
     fail "$bridge_header has drifted from prv-ffi; run: cd core && cargo run -p prv-ffi --bin bridgegen -- ../$bridge_header"
+fi
+
+# ---------------------------------------------------------------------------
+# Rule 11 — the application icon is what the design tokens say it is.
+#
+# Master Prompt #17 makes `design/tokens/tokens.json` the single source of truth
+# for colour. An icon exported from a design tool is a second source, and the
+# way that fails is quiet: the accent moves, the interface follows, and the icon
+# in the dock keeps last year's colour for a year.
+#
+# Same argument as Rule 9, one layer out. The generator is the authority, and
+# this asserts the committed images are what it produces today.
+# ---------------------------------------------------------------------------
+iconset="apple/Resources/Assets.xcassets/AppIcon.appiconset"
+icon_manifest="design/tokens/icon-manifest.txt"
+if [ ! -d "$iconset" ]; then
+    fail "the application icon is missing: $iconset"
+elif [ ! -f "$icon_manifest" ]; then
+    fail "the icon manifest is missing; run: python3 tools/icongen.py"
+elif ! command -v python3 >/dev/null 2>&1; then
+    pass "icon not checked (no python3 on this machine)"
+# Hashes rather than a re-render. Redrawing the set is twenty seconds of
+# interpreted Python, and a check nobody will wait for is a check that gets
+# skipped. Comparing the manifest costs milliseconds and catches strictly more:
+# a changed token, a changed generator, and an image edited by hand.
+elif python3 tools/icon-manifest-check.py >/dev/null 2>&1; then
+    pass "the icon matches the design tokens"
+else
+    python3 tools/icon-manifest-check.py 2>&1 | sed 's/^/        /' >&2 || true
+    fail "the icon has drifted from design/tokens/tokens.json; run: python3 tools/icongen.py"
 fi
 
 if [ "$failures" -gt 0 ]; then

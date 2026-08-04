@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>PRV AI DJ Studio</string>
+    <key>CFBundleIdentifier</key>
+    <string>studio.prv.aidj</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- A launch screen is mandatory on iOS. An empty dictionary asks the
+         system for the plain one, which is the right answer for an application
+         whose first screen is a list: a splash image that flashes and vanishes
+         is a frame the user did not ask for. -->
+    <key>UILaunchScreen</key>
+    <dict/>
+
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Audio keeps playing when the screen locks or the application goes to
+         the background. A DJ application that stopped when somebody answered a
+         message would be unusable, and this is the only background mode
+         claimed: no location, no fetch, no processing. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+    </array>
+
+    <!-- The user's own files, opened through the document picker, and projects
+         reachable through the Files application so they are not trapped inside
+         the app. Master Prompt #29 makes the user the owner of their material;
+         a library they cannot get at is ownership in name only. -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
+    <!-- No microphone entry, deliberately. The application does not record, and
+         an unused usage description is a permission somebody grants for
+         nothing. -->
+
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>studio.prv.aidj.project</string>
+            <key>UTTypeDescription</key>
+            <string>PRV Project</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>prvproj</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>

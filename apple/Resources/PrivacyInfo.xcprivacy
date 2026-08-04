@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Apple has required this manifest since 2024. An upload without it is
+         rejected, and one that overstates what it collects is a promise the
+         product then has to keep.
+
+         Every array below is empty, and each is empty for a reason worth
+         stating rather than left to be assumed. This is the same claim
+         `prv-security` makes in code and architecture rule 10 enforces in the
+         sandbox; here it is made in the form Apple reads. -->
+
+    <!-- Nothing is tracked. No advertising identifier is read, no profile is
+         built for anybody else's purposes, and nothing is joined with data from
+         another company. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- Nothing is collected. The application's whole design is that the user's
+         music and projects stay on their machine: the core performs no
+         input or output at all (ADR-0001), and the macOS sandbox has no
+         network-client entitlement, so an outbound connection is impossible
+         rather than merely unused.
+
+         Cloud synchronisation, when it ships, adds entries here in the same
+         commit as the consent screen and the entitlement it depends on. -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <!-- No required-reason API is used.
+
+         Checked rather than assumed: the four categories Apple asks about are
+         file timestamps, system boot time, disk space and user defaults. The
+         application reads directories and creates them — `createDirectory`,
+         `fileExists`, `contentsOfDirectory` — none of which are on the list,
+         and it stores no preferences in `UserDefaults`. Timestamps that reach
+         the project log are supplied by the caller, not read from the
+         filesystem, because ADR-0001 keeps the core away from the clock.
+
+         An entry added here later should be added because a call was added,
+         and the two belong in the same commit. -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array/>
+</dict>
+</plist>

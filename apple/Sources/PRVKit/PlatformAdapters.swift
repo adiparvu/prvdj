@@ -102,6 +102,13 @@ import PRVCore
     public final class CoreAudioOutput: AudioOutput {
         private let engine = AVAudioEngine()
         private var sourceNode: AVAudioSourceNode?
+        /// The render scratch, held so that `stop` can return it.
+        ///
+        /// It used to be a local, freed only on the error path — so every
+        /// successful start-and-stop leaked one block, and a set that switched
+        /// devices a few times leaked a few. Holding it is what makes the
+        /// lifetime match the node's.
+        private var scratch: UnsafeMutableBufferPointer<Float>?
         public private(set) var isRunning = false
 
         public init() {}
@@ -112,6 +119,7 @@ import PRVCore
             render: @escaping @Sendable (UnsafeMutableBufferPointer<Float>, Int) -> Void
         ) throws {
             guard !isRunning else { return }
+            try Self.prepareSession()
             guard
                 let format = AVAudioFormat(
                     standardFormatWithSampleRate: Double(sampleRate),
@@ -131,6 +139,7 @@ import PRVCore
                 capacity: channels * maxFrames
             )
             scratch.initialize(repeating: 0)
+            self.scratch = scratch
 
             let node = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
                 let frames = min(Int(frameCount), maxFrames)
@@ -155,7 +164,10 @@ import PRVCore
             do {
                 try engine.start()
             } catch {
+                engine.detach(node)
+                sourceNode = nil
                 scratch.deallocate()
+                self.scratch = nil
                 throw PlatformError.deviceUnavailable
             }
             isRunning = true
@@ -168,7 +180,45 @@ import PRVCore
                 engine.detach(sourceNode)
             }
             sourceNode = nil
+            // After the node is detached, so nothing can be rendering into it.
+            scratch?.deallocate()
+            scratch = nil
             isRunning = false
+        }
+
+        deinit {
+            // A caller that drops the output without stopping it should not
+            // leak. Detaching is the engine's business and it is going away
+            // too; the buffer is ours.
+            scratch?.deallocate()
+        }
+
+        /// Puts the audio session into a state that plays.
+        ///
+        /// # Why only iOS has this
+        ///
+        /// macOS has no `AVAudioSession`: an application asks for an output
+        /// device and gets one. On iOS the session is what decides whether
+        /// audio plays at all, whether it survives the screen locking, and what
+        /// happens when a call arrives — and the default category is
+        /// `.soloAmbient`, which is silenced by the ring switch and stops in the
+        /// background.
+        ///
+        /// A DJ application silenced by a hardware switch, or stopped because
+        /// somebody answered a message, is not usable. `.playback` is the
+        /// category that says so, and it is the counterpart of the `audio`
+        /// background mode declared in the iOS Info.plist — neither works
+        /// without the other.
+        private static func prepareSession() throws {
+            #if os(iOS)
+                do {
+                    let session = AVAudioSession.sharedInstance()
+                    try session.setCategory(.playback, mode: .default)
+                    try session.setActive(true)
+                } catch {
+                    throw PlatformError.deviceUnavailable
+                }
+            #endif
         }
     }
 #endif
