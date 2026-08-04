@@ -172,6 +172,15 @@ did not have would be worse than no row at all.
 | Two devices never name the same placement | MP#24, ADR-0003 | `prv-ffi::Engine::allocate_placements` | `two_devices_never_name_the_same_placement`, `both sides end up with the same project, and neither is in charge` | **Verified** |
 | A device identity is declared by the host | MP#24, ADR-0001 | `prv-ffi::Engine::set_device` | `an identity is required to be plausible and cannot change underneath a log` | **Verified** |
 | A repeated delivery is recognised, not duplicated | MP#24 | `prv-project::MergeReport::already_present` | `sending_the_same_bytes_twice_costs_nothing`, `a message delivered twice is recognised rather than applied twice` | **Verified** |
+| A timeline can be read clip by clip | MP#21, MP#17 | `prv-ffi::Engine::placement` | `the_timeline_can_be_read_back_clip_by_clip`, `the timeline can be read back clip by clip` | **Verified** |
+| Clip order is stable while a clip is dragged | MP#21 | `prv-ffi::Engine::placement` | `identity_order_does_not_move_when_a_clip_does`, `two clips starting together keep a stable order` | **Verified** |
+| Every edit is reversible | MP#3C, ADR-0003 | `prv-ffi::Engine::undo` | `an_edit_survives_being_undone_and_the_history_still_says_what_happened`, `removing_a_clip_is_reversible_because_nothing_was_deleted` | **Verified** |
+| An undo never silently discards a collaborator's edit | MP#24, MP#9 | `prv-ffi::Engine::undo_is_available` | `an_undo_that_would_discard_somebody_elses_work_is_refused_rather_than_done` | **Verified** |
+| A refused edit never reaches the log | MP#24 | `prv-ffi::Engine::edit` | `editing_a_clip_that_is_not_there_is_refused_at_the_boundary`, `a clip that is not there is refused, and the history is untouched` | **Verified** |
+| Only the sound coming out now interrupts a performance | MP#19 | `PRVUI::LiveModel::warningKey` | `only the sound coming out right now may interrupt a performance` | **Verified** |
+| A performer is told what is next | MP#19, MP#17 | `PRVUI::LiveModel::upNext` | `the performer is told what is playing and what is next`, `at the end there is nothing next, and that is not an error` | **Verified** |
+| A screen shows one next step, not four | MP#17 | `PRVUI::HomeModel::nextStepKey` | `the suggestion follows what is missing, one step at a time` | **Verified** |
+| A space cannot be added without deciding what it shows | MP#2, MP#17 | `PRVUI::StudioWindow` | structural — the switch has no `default` arm | **Enforced** |
 | The icon is generated, never hand-drawn | MP#17, MP#28 | `tools/icongen.py` | architecture rule 11, verified against three drift modes | **Enforced** |
 | No entitlements file grants the network | MP#26 | `tools/check-architecture.sh` | architecture rule 10, verified against a deliberate second file | **Enforced** |
 | No signing material is committed | MP#26 | `.github/workflows/release.yml` | architecture rule 8; every credential is a repository secret | **Enforced** |

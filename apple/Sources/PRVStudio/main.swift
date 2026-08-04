@@ -28,10 +28,17 @@ import PRVUI
                     library: studio.library,
                     planning: studio.planning,
                     transport: studio.transport,
+                    home: studio.home,
+                    mix: studio.mix,
+                    live: studio.live,
+                    settings: studio.settings,
                     onPlay: { studio.play() },
                     onPause: { studio.pause() },
                     onSelect: { studio.select($0) },
-                    onAdopt: { studio.adopt($0) }
+                    onAdopt: { studio.adopt($0) },
+                    onRemoveClip: { studio.removeClip($0) },
+                    onUndo: { studio.undo() },
+                    onConsent: { studio.setConsent($0, granted: $1) }
                 )
                 .task { studio.start() }
             }

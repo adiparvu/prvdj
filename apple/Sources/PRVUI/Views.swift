@@ -173,30 +173,52 @@ import PRVKit
     /// The window: a space picker beside whatever space is chosen.
     public struct StudioWindow: View {
         @State private var space: Space = .home
+        @State private var selectedClip: UInt64?
         private let library: LibraryModel
         private let planning: PlanningModel
         private let transport: TransportModel
+        private let home: HomeModel
+        private let mix: MixEditorModel
+        private let live: LiveModel
+        private let settings: SettingsModel
         private let onPlay: () -> Void
         private let onPause: () -> Void
         private let onSelect: (Int) -> Void
         private let onAdopt: (Int) -> Void
+        private let onRemoveClip: (UInt64) -> Void
+        private let onUndo: () -> Void
+        private let onConsent: (Purpose, Bool) -> Void
 
         public init(
             library: LibraryModel,
             planning: PlanningModel,
             transport: TransportModel,
+            home: HomeModel,
+            mix: MixEditorModel,
+            live: LiveModel,
+            settings: SettingsModel,
             onPlay: @escaping () -> Void,
             onPause: @escaping () -> Void,
             onSelect: @escaping (Int) -> Void,
-            onAdopt: @escaping (Int) -> Void
+            onAdopt: @escaping (Int) -> Void,
+            onRemoveClip: @escaping (UInt64) -> Void,
+            onUndo: @escaping () -> Void,
+            onConsent: @escaping (Purpose, Bool) -> Void
         ) {
             self.library = library
             self.planning = planning
             self.transport = transport
+            self.home = home
+            self.mix = mix
+            self.live = live
+            self.settings = settings
             self.onPlay = onPlay
             self.onPause = onPause
             self.onSelect = onSelect
             self.onAdopt = onAdopt
+            self.onRemoveClip = onRemoveClip
+            self.onUndo = onUndo
+            self.onConsent = onConsent
         }
 
         public var body: some View {
@@ -210,22 +232,51 @@ import PRVKit
                 }
             } detail: {
                 VStack {
+                    // Every space, with no fall-through. A `default` arm here
+                    // would let a space added to the enum quietly render a
+                    // placeholder instead of failing to compile — which is how
+                    // four of them stayed empty for as long as they did.
                     switch space {
+                    case .home:
+                        HomeSpace(model: home, onGo: { space = StudioWindow.destination(from: home) })
                     case .library:
                         LibrarySpace(model: library)
                     case .aiStudio:
                         AIStudioSpace(model: planning, onSelect: onSelect, onAdopt: onAdopt)
-                    default:
-                        ContentUnavailableView(
-                            LocalizedStringKey(space.titleKey),
-                            systemImage: StudioWindow.icon(for: space),
-                            description: Text(LocalizedStringKey(space.purposeKey))
+                    case .mixEditor:
+                        MixEditorSpace(
+                            model: mix,
+                            selection: $selectedClip,
+                            onRemove: onRemoveClip,
+                            onUndo: onUndo
                         )
+                    case .live:
+                        LiveSpace(model: live, onPlay: onPlay, onPause: onPause)
+                    case .settings:
+                        SettingsSpace(model: settings, onToggle: onConsent)
                     }
-                    Divider()
-                    TransportBar(model: transport, onPlay: onPlay, onPause: onPause)
-                        .padding(.bottom, 8)
+
+                    // The live space carries its own transport and needs the
+                    // screen; anywhere else the bar sits along the bottom.
+                    if space != .live {
+                        Divider()
+                        TransportBar(model: transport, onPlay: onPlay, onPause: onPause)
+                            .padding(.bottom, 8)
+                    }
                 }
+            }
+        }
+
+        /// Where the home screen's one suggestion leads.
+        ///
+        /// The mapping is here rather than in the model because it is
+        /// navigation, and navigation is presentation. The model decides *what*
+        /// to suggest; this decides where that lives.
+        private static func destination(from home: HomeModel) -> Space {
+            switch home.nextStepKey {
+            case "home.next.import": .library
+            case "home.next.plan", "home.next.adopt": .aiStudio
+            default: .live
             }
         }
 

@@ -42,6 +42,34 @@ public final class Studio {
         ),
         sampleRate: 48_000
     )
+    public private(set) var home = HomeModel(
+        trackCount: 0, projectFrames: 0, sampleRate: 48_000, planOptions: 0
+    )
+    public private(set) var mix = MixEditorModel(
+        clips: [], projectFrames: 0, sampleRate: 48_000
+    )
+    public private(set) var live = LiveModel(
+        transport: TransportModel(
+            snapshot: SessionSnapshot(
+                playback: .stopped, position: 0, duration: 0,
+                placementCount: 0, audioComplete: true
+            ),
+            sampleRate: 48_000
+        ),
+        clips: [],
+        positionFrames: 0,
+        sampleRate: 48_000
+    )
+    public private(set) var settings = SettingsModel(
+        consent: ConsentModel(rows: []),
+        sync: SyncModel(
+            snapshot: SyncSnapshot.offline
+        ),
+        tierKey: "tier.free"
+    )
+
+    /// Where synchronisation is, for the installation rather than the project.
+    private var sync: Sync?
 
     public init() {}
 
@@ -161,6 +189,47 @@ public final class Studio {
     ///
     /// One snapshot rather than four reads, so the interface cannot show a
     /// playhead from one moment beside a state from another.
+    /// Removes a clip from the set.
+    public func removeClip(_ placement: UInt64) {
+        guard let session else { return }
+        do {
+            try session.remove(placement: placement)
+            refresh()
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
+    /// Undoes the last edit made here.
+    ///
+    /// A refusal is not a failure: undo declines when another device changed
+    /// the same thing afterwards, and the model says so on the screen rather
+    /// than reporting an error nobody can act on.
+    public func undo() {
+        guard let session else { return }
+        do {
+            try session.undo()
+            refresh()
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
+    /// Grants or withdraws one purpose.
+    public func setConsent(_ purpose: Purpose, granted: Bool) {
+        guard let policy else { return }
+        do {
+            if granted {
+                try policy.grant(purpose, agreementVersion: 1)
+            } else {
+                try policy.withdraw(purpose)
+            }
+            refresh()
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
     private func refresh() {
         guard let session, let snapshot = try? session.snapshot() else { return }
         library = LibraryModel(
@@ -175,5 +244,51 @@ public final class Studio {
             sampleRate: session.sampleRate
         )
         transport = TransportModel(snapshot: snapshot, sampleRate: session.sampleRate)
+
+        // The timeline, named from the library where it can be. A clip whose
+        // track has no name is still drawn and still draggable; the model falls
+        // back to its identity rather than to nothing.
+        let names = Dictionary(
+            session.library.map { ($0.id, $0.title) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let clips = ((try? session.placements()) ?? []).map { placement in
+            ClipModel(placement: placement, title: names[placement.track])
+        }
+
+        let syncModel = SyncModel(
+            snapshot: (try? sync?.snapshot())
+                ?? SyncSnapshot.offline,
+            carried: (try? session.carriedCount()) ?? 0
+        )
+
+        home = HomeModel(
+            trackCount: session.library.count,
+            projectFrames: snapshot.duration,
+            sampleRate: session.sampleRate,
+            planOptions: alternatives.count,
+            sync: syncModel
+        )
+        mix = MixEditorModel(
+            clips: clips,
+            projectFrames: snapshot.duration,
+            sampleRate: session.sampleRate,
+            undo: (try? session.undoAvailability()) ?? .nothingToUndo,
+            historyLength: (try? session.historyLength()) ?? 0
+        )
+        live = LiveModel(
+            transport: transport,
+            clips: clips,
+            positionFrames: snapshot.position,
+            sampleRate: session.sampleRate,
+            renderWasComplete: snapshot.audioComplete
+        )
+        if let policy {
+            settings = SettingsModel(
+                consent: (try? ConsentModel(policy: policy)) ?? ConsentModel(rows: []),
+                sync: syncModel,
+                tierKey: (try? policy.tier)?.titleKey ?? "tier.free"
+            )
+        }
     }
 }

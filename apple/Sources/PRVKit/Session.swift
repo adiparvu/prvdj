@@ -296,6 +296,50 @@ public final class Session {
     }
 
     /// Everything an interface needs, consistent as of now.
+    // MARK: - Editing the set
+
+    /// Every clip on the timeline.
+    public func placements() throws -> [Placement] {
+        try engine.placements()
+    }
+
+    /// Moves a clip.
+    public func move(placement: UInt64, to position: Int64, lane: UInt32) throws {
+        try engine.move(placement: placement, to: position, lane: lane)
+    }
+
+    /// Changes how long a clip plays for.
+    public func trim(placement: UInt64, to length: Int64) throws {
+        try engine.trim(placement: placement, to: length)
+    }
+
+    /// Takes a clip off the timeline. Reversible: nothing is deleted.
+    public func remove(placement: UInt64) throws {
+        try engine.remove(placement: placement)
+    }
+
+    /// Undoes the last edit made here, if that would not discard somebody
+    /// else's work.
+    @discardableResult
+    public func undo() throws -> UInt64 {
+        try engine.undo()
+    }
+
+    /// Whether undo would do anything, and why not when it would not.
+    public func undoAvailability() throws -> UndoAvailability {
+        try engine.undoAvailability()
+    }
+
+    /// How many operations the project's history holds.
+    public func historyLength() throws -> UInt64 {
+        try engine.historyLength()
+    }
+
+    /// How many operations were made by a newer version of the application.
+    public func carriedCount() throws -> UInt64 {
+        try engine.carriedCount()
+    }
+
     public func snapshot() throws -> SessionSnapshot {
         SessionSnapshot(
             playback: try engine.playbackState(),

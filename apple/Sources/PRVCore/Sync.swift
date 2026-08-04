@@ -101,6 +101,36 @@ public struct SyncSnapshot: Sendable, Equatable {
     public let waiting: UInt64
     /// Whether that is close enough to the bound to be worth mentioning.
     public let isNearlyFull: Bool
+
+    public init(
+        state: SyncState,
+        editingIsAllowed: Bool,
+        isTransferring: Bool,
+        needsTheUser: Bool,
+        waiting: UInt64,
+        isNearlyFull: Bool
+    ) {
+        self.state = state
+        self.editingIsAllowed = editingIsAllowed
+        self.isTransferring = isTransferring
+        self.needsTheUser = needsTheUser
+        self.waiting = waiting
+        self.isNearlyFull = isNearlyFull
+    }
+
+    /// What an installation looks like before anything has been asked of it.
+    ///
+    /// Offline, editable, with nothing waiting. Exists so that a caller with no
+    /// synchronisation yet has something honest to show rather than an optional
+    /// to unwrap into a blank.
+    public static let offline = Self(
+        state: .offline,
+        editingIsAllowed: true,
+        isTransferring: false,
+        needsTheUser: false,
+        waiting: 0,
+        isNearlyFull: false
+    )
 }
 
 /// The synchronisation state of one installation.

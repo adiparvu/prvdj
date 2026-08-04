@@ -66,6 +66,26 @@ pub struct SyncReport {
     pub carried: u64,
 }
 
+/// One clip on the timeline, as it crosses the boundary.
+///
+/// Six numbers rather than a handle: a placement is a value, it is small, and a
+/// host redrawing a timeline wants a great many of them without a call each.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Placement {
+    /// Its identity, stable for as long as it exists.
+    pub id: u64,
+    /// The library track it plays.
+    pub track: u64,
+    /// Where it starts, in frames.
+    pub position: i64,
+    /// How long it plays for.
+    pub length: i64,
+    /// Which lane it sits on.
+    pub lane: u32,
+    /// How far into its media it begins.
+    pub source_offset: i64,
+}
+
 /// The device an engine is until a host says otherwise.
 ///
 /// Correct for one machine and wrong for a fleet, which is why
@@ -398,6 +418,209 @@ impl Engine {
     #[must_use]
     pub fn duration(&self) -> i64 {
         self.state.duration().get()
+    }
+
+    /// Moves a clip, as an operation on the log.
+    ///
+    /// # Why every edit goes through the log
+    ///
+    /// ADR-0003 makes the project *be* its log, so an edit that changed the
+    /// materialised state directly would be invisible to undo, to version
+    /// history, to comparison and to synchronisation — four features that are
+    /// consequences of one mechanism rather than four things to remember.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidArgument`] for a clip the project does not hold, and
+    /// [`Status::Refused`] when the log will not accept the operation.
+    pub fn move_placement(
+        &mut self,
+        placement: u64,
+        position: i64,
+        lane: u32,
+        timestamp_micros: i64,
+    ) -> Result<(), Status> {
+        self.edit(
+            placement,
+            OperationPayload::MovePlacement {
+                placement: PlacementId::new(placement),
+                position: Frames::new(position),
+                lane,
+            },
+            timestamp_micros,
+        )
+    }
+
+    /// Changes how long a clip plays for.
+    ///
+    /// # Errors
+    ///
+    /// As [`Engine::move_placement`], and [`Status::InvalidArgument`] for a
+    /// length that is not positive — a clip of no length is a clip that cannot
+    /// be found again to fix.
+    pub fn trim_placement(
+        &mut self,
+        placement: u64,
+        length: i64,
+        timestamp_micros: i64,
+    ) -> Result<(), Status> {
+        if length <= 0 {
+            return Err(Status::InvalidArgument);
+        }
+        self.edit(
+            placement,
+            OperationPayload::TrimPlacement {
+                placement: PlacementId::new(placement),
+                length: Frames::new(length),
+            },
+            timestamp_micros,
+        )
+    }
+
+    /// Takes a clip off the timeline.
+    ///
+    /// Not a deletion of anything: the operation that placed it is still in the
+    /// log, so undo restores it and the history still says what happened.
+    ///
+    /// # Errors
+    ///
+    /// As [`Engine::move_placement`].
+    pub fn remove_placement(
+        &mut self,
+        placement: u64,
+        timestamp_micros: i64,
+    ) -> Result<(), Status> {
+        self.edit(
+            placement,
+            OperationPayload::RemovePlacement {
+                placement: PlacementId::new(placement),
+            },
+            timestamp_micros,
+        )
+    }
+
+    /// Authors one edit against an existing clip.
+    fn edit(
+        &mut self,
+        placement: u64,
+        payload: OperationPayload,
+        timestamp_micros: i64,
+    ) -> Result<(), Status> {
+        // Checked here rather than left to the fold, because an operation
+        // naming a clip that does not exist would be appended, synchronised and
+        // silently ignored on every device that received it.
+        if !self
+            .state
+            .placements
+            .contains_key(&PlacementId::new(placement))
+        {
+            return Err(Status::InvalidArgument);
+        }
+
+        let operation = self.log.author(self.device, timestamp_micros, payload);
+        self.log.append(operation).map_err(|_| Status::Refused)?;
+        self.refold()
+    }
+
+    /// Undoes this device's last edit, if that can be done without discarding
+    /// somebody else's.
+    ///
+    /// Returns how many operations the undo took — zero when there is nothing
+    /// to undo *and* zero when another device has since changed the same thing,
+    /// which [`Engine::undo_is_available`] tells apart.
+    ///
+    /// # Why refusing is the right answer rather than a limitation
+    ///
+    /// In a shared project, "undo my last edit" can collide with somebody
+    /// else's later one. If I move a clip and you then move it again, the
+    /// inverse of *my* move puts the clip back where it was before either of us
+    /// touched it — discarding your work without saying so. Master Prompt #24
+    /// forbids that, and there is no correct silent answer.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::Refused`] when the log will not accept the inverse.
+    pub fn undo(&mut self, timestamp_micros: i64) -> Result<u64, Status> {
+        let undo = self.log.undo_for(self.device, timestamp_micros);
+        let operations = undo.operations().to_vec();
+        if operations.is_empty() {
+            return Ok(0);
+        }
+        let count = operations.len();
+        for operation in operations {
+            self.log.append(operation).map_err(|_| Status::Refused)?;
+        }
+        self.refold()?;
+        Ok(count.try_into().unwrap_or(u64::MAX))
+    }
+
+    /// Why undo would do nothing, when it would.
+    ///
+    /// Zero when there is something to undo; one when there is nothing; two
+    /// when another device changed the same thing afterwards; three when the
+    /// core gave a reason this build has no name for. A host shows the second
+    /// and third differently, because "nothing to undo" is a disabled button
+    /// and "somebody else moved this" is a sentence.
+    #[must_use]
+    pub fn undo_is_available(&self, timestamp_micros: i64) -> i32 {
+        match self.log.undo_for(self.device, timestamp_micros) {
+            prv_project::Undo::Operations(_) => 0,
+            prv_project::Undo::Nothing => 1,
+            prv_project::Undo::Superseded { .. } => 2,
+            // `Undo` is `non_exhaustive`, so this arm cannot be removed. It gets
+            // a number of its own rather than borrowing "nothing to undo":
+            // those are different answers, and a host that showed a reason it
+            // could not name as "nothing to undo" would be telling a small lie
+            // about why a control is disabled.
+            _ => 3,
+        }
+    }
+
+    /// One placement of the project, by position in identity order.
+    ///
+    /// # Why a host needs these and not just a count
+    ///
+    /// A timeline is drawn from them. Until now the boundary reported how many
+    /// placements a project held and how long the whole thing was, which is
+    /// enough to say "four tracks, thirty-eight minutes" and not enough to draw
+    /// a single clip.
+    ///
+    /// Ordered by identity rather than by position, and deliberately: identity
+    /// order is stable while a user drags a clip, and a list that reordered
+    /// itself under the hand doing the dragging is why timelines flicker. A host
+    /// that wants time order sorts them, which it can do because it has the
+    /// positions.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidArgument`] for an index past the end.
+    pub fn placement(&self, index: u64) -> Result<Placement, Status> {
+        let index = usize::try_from(index).map_err(|_| Status::InvalidArgument)?;
+        let (id, placement) = self
+            .state
+            .placements
+            .iter()
+            .nth(index)
+            .ok_or(Status::InvalidArgument)?;
+        Ok(Placement {
+            id: id.get(),
+            track: placement.track.get(),
+            position: placement.position.get(),
+            length: placement.length.get(),
+            lane: placement.lane,
+            source_offset: placement.source_offset.get(),
+        })
+    }
+
+    /// How many operations the project's history holds.
+    ///
+    /// A host shows it as the length of the history. It is also the honest way
+    /// to check that a refused edit did not reach the log — a boundary that
+    /// reported success and appended nothing, or reported failure and appended
+    /// anyway, would be a nastier defect than either alone.
+    #[must_use]
+    pub fn log_length(&self) -> u64 {
+        self.log.len().try_into().unwrap_or(u64::MAX)
     }
 
     /// How many placements the project holds.
@@ -756,6 +979,192 @@ mod tests {
         let mut engine = Engine::new(48_000, 2, 512).expect("an engine");
         engine.set_device(device).expect("an identity");
         engine
+    }
+
+    #[test]
+    fn the_timeline_can_be_read_back_clip_by_clip() {
+        // What a mix editor is drawn from. Until this existed, a host could say
+        // how many clips a project held and how long it was, and could not draw
+        // a single one of them.
+        let mut engine = engine(1);
+        let first = engine
+            .place_track(7, 0, 4_096, 512, 0, 1_000)
+            .expect("places");
+        let second = engine
+            .place_track(9, 4_096, 8_192, 0, 1, 1_000)
+            .expect("places");
+
+        assert_eq!(engine.placement_count(), 2);
+
+        let clips: Vec<Placement> = (0..2)
+            .map(|index| engine.placement(index).expect("a clip"))
+            .collect();
+
+        let one = clips
+            .iter()
+            .find(|clip| clip.id == first)
+            .expect("the first");
+        assert_eq!(one.track, 7);
+        assert_eq!(one.position, 0);
+        assert_eq!(one.length, 4_096);
+        assert_eq!(one.lane, 0);
+        assert_eq!(one.source_offset, 512, "the source offset did not survive");
+
+        let two = clips
+            .iter()
+            .find(|clip| clip.id == second)
+            .expect("the second");
+        assert_eq!(two.track, 9);
+        assert_eq!(two.position, 4_096);
+        assert_eq!(two.lane, 1);
+        assert_eq!(two.source_offset, 0);
+    }
+
+    #[test]
+    fn an_edit_survives_being_undone_and_the_history_still_says_what_happened() {
+        // ADR-0003: the project *is* its log, so undo is a consequence of the
+        // mechanism rather than a feature bolted beside it.
+        let mut engine = engine(1);
+        let clip = engine
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+
+        engine.move_placement(clip, 8_192, 1, 2_000).expect("moves");
+        assert_eq!(engine.placement(0).expect("a clip").position, 8_192);
+        assert_eq!(engine.placement(0).expect("a clip").lane, 1);
+
+        assert_eq!(engine.undo_is_available(3_000), 0);
+        assert!(engine.undo(3_000).expect("undoes") > 0);
+        assert_eq!(engine.placement(0).expect("a clip").position, 0);
+        assert_eq!(engine.placement(0).expect("a clip").lane, 0);
+    }
+
+    #[test]
+    fn removing_a_clip_is_reversible_because_nothing_was_deleted() {
+        let mut engine = engine(1);
+        let clip = engine
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+        engine.remove_placement(clip, 2_000).expect("removes");
+        assert_eq!(engine.placement_count(), 0);
+
+        assert!(engine.undo(3_000).expect("undoes") > 0);
+        assert_eq!(engine.placement_count(), 1);
+        assert_eq!(engine.placement(0).expect("a clip").id, clip);
+    }
+
+    #[test]
+    fn trimming_refuses_a_length_that_would_lose_the_clip() {
+        let mut engine = engine(1);
+        let clip = engine
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+
+        assert_eq!(
+            engine.trim_placement(clip, 0, 2_000).err(),
+            Some(Status::InvalidArgument)
+        );
+        assert_eq!(
+            engine.trim_placement(clip, -1, 2_000).err(),
+            Some(Status::InvalidArgument)
+        );
+        engine.trim_placement(clip, 2_048, 2_000).expect("trims");
+        assert_eq!(engine.placement(0).expect("a clip").length, 2_048);
+    }
+
+    #[test]
+    fn editing_a_clip_that_is_not_there_is_refused_at_the_boundary() {
+        // Not left to the fold. An operation naming a clip that does not exist
+        // would be appended, synchronised, and silently ignored on every device
+        // that received it — a no-op propagated as though it were work.
+        let mut engine = engine(1);
+        engine
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+
+        assert_eq!(
+            engine.move_placement(9_999, 0, 0, 2_000).err(),
+            Some(Status::InvalidArgument)
+        );
+        assert_eq!(
+            engine.remove_placement(9_999, 2_000).err(),
+            Some(Status::InvalidArgument)
+        );
+        assert_eq!(engine.log_length(), 1, "a refused edit reached the log");
+    }
+
+    #[test]
+    fn an_undo_that_would_discard_somebody_elses_work_is_refused_rather_than_done() {
+        // The case with no correct silent answer. I move a clip, you move it
+        // again; the inverse of my move puts it back where it was before either
+        // of us touched it, discarding your work without saying so.
+        let mut mine = engine(1);
+        let clip = mine.place_track(1, 0, 4_096, 0, 0, 1_000).expect("places");
+        mine.move_placement(clip, 4_096, 0, 2_000).expect("moves");
+
+        // The other device's later edit arrives.
+        let theirs = {
+            let mut log = prv_project::OperationLog::new();
+            log.merge(&mine.log.operations().cloned().collect::<Vec<_>>())
+                .expect("merges");
+            let operation = log.author(
+                DeviceId::new(2),
+                3_000,
+                OperationPayload::MovePlacement {
+                    placement: PlacementId::new(clip),
+                    position: Frames::new(8_192),
+                    lane: 0,
+                },
+            );
+            log.append(operation.clone()).expect("appends");
+            operation
+        };
+        mine.log.merge(&[theirs]).expect("merges");
+
+        assert_eq!(mine.undo_is_available(4_000), 2, "the collision was missed");
+        assert_eq!(mine.undo(4_000).expect("refuses quietly"), 0);
+    }
+
+    #[test]
+    fn a_clip_past_the_end_is_refused_rather_than_invented() {
+        let mut engine = engine(1);
+        engine
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+
+        assert_eq!(engine.placement(1).err(), Some(Status::InvalidArgument));
+        assert_eq!(
+            engine.placement(u64::MAX).err(),
+            Some(Status::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn identity_order_does_not_move_when_a_clip_does() {
+        // The reason the order is by identity rather than by position: a list
+        // that reordered itself under the hand doing the dragging is why
+        // timelines flicker.
+        let mut engine = engine(1);
+        for index in 0..4 {
+            engine
+                .place_track(1, index * 4_096, 4_096, 0, 0, 1_000)
+                .expect("places");
+        }
+        let before: Vec<u64> = (0..4)
+            .map(|index| engine.placement(index).expect("a clip").id)
+            .collect();
+
+        // Move the first clip past all the others. Time order is now different;
+        // identity order must not be.
+        let moved = before.first().copied().expect("a clip");
+        engine
+            .move_placement(moved, 999_999, 0, 2_000)
+            .expect("moves");
+
+        let after: Vec<u64> = (0..4)
+            .map(|index| engine.placement(index).expect("a clip").id)
+            .collect();
+        assert_eq!(before, after, "identity order changed when a clip moved");
     }
 
     #[test]

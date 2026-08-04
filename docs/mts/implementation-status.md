@@ -829,6 +829,53 @@ rather than on the platform making failure impossible — a materially weaker
 assurance, recorded as [known limitation 7](17-known-limitations.md) rather than
 presented as equivalent.
 
+### Sprint 44 — the spaces that were placeholders
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv_engine_placement` | Completed | Verified | A timeline is drawn from clips, not from a count |
+| Move, trim, remove | Completed | Verified | Every edit is an operation on the log |
+| `prv_engine_undo`, `prv_engine_undo_available` | Completed | Verified | Four answers, because there are four situations |
+| `HomeModel`, `MixEditorModel`, `LiveModel`, `SettingsModel` | Completed | **Verified on Linux** | 20 tests |
+| `HomeSpace`, `MixEditorSpace`, `LiveSpace`, `SettingsSpace` | Completed | **Authored, never compiled** | As every SwiftUI view here |
+| The space switch has no `default` arm | Completed | Verified by construction | A new space is now a compile error, not a placeholder |
+| ABI minor version 1.11 | Completed | Verified | Calls added, nothing existing moved |
+
+**Why the spaces were empty is worth recording**, because it was not laziness.
+Four screens had nothing to draw because the boundary could not answer what they
+would show: it reported that a project held four clips and lasted thirty-eight
+minutes, and could not name a single one of them. A mix editor needs the clips;
+a live view needs to know which one is playing and which is next. So the sprint
+started at the boundary rather than in SwiftUI.
+
+**Editing goes through the log, which is the only place it can go.** ADR-0003
+makes the project *be* its history, so an edit that changed the materialised
+state directly would be invisible to undo, to version history, to comparison and
+to synchronisation — four features that are consequences of one mechanism rather
+than four things to remember. Removing a clip deletes nothing: the operation
+that placed it stays, which is why undo restores it.
+
+**Undo has four answers rather than two.** There is something to undo; there is
+nothing; another device changed the same thing afterwards; and the core gave a
+reason this build has no name for. The middle two look alike and are not:
+"nothing to undo" is a disabled button, and "somebody else moved this since" is a
+sentence — showing the second as the first leaves a user thinking the
+application is broken. Clippy caught the fourth being folded into the second,
+and it was right to: reporting an unnamed reason as "nothing to undo" is a small
+lie about why a control is disabled.
+
+**Nothing on these screens was invented.** The temptation with an empty screen is
+to design the product you wish existed — recent projects, collaborators, a feed.
+Every value in the four models comes from something the core already holds, and
+where there is no answer yet the model shows a dash rather than a plausible
+number. A screen that displays something it made up is worse than one that
+admits a gap.
+
+**The switch over spaces has no `default` arm.** That is how four of them stayed
+empty for as long as they did: a fall-through renders a placeholder, and a
+placeholder compiles. A space added to the enum is now a compile error until
+somebody decides what it shows.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

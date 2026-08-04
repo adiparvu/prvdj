@@ -119,19 +119,18 @@ call through one audited place, so "did anything leave?" is a question about one
 file rather than about the whole application. That is not a substitute for the
 entitlement, and this section should not be removed when it ships.
 
-## 8. No screen has been drawn
+## 8. Every screen exists; none has been compiled
 
-Narrower than it used to read, and the difference is worth stating rather than
-leaving as a stale sentence. This section said "nothing user-facing exists", and
-that stopped being true several sprints ago: the application starts, and `PRVUI`
-holds the models behind six spaces, the library, the transport, planning, the
-consent screen and the synchronisation status — all built and tested on every
-commit.
+Narrower than it used to read, twice over. This section once said "nothing
+user-facing exists", which stopped being true when the application started. It
+then said four of six spaces drew a placeholder, which stopped being true in
+Sprint 44: home, the mix editor, the live view and settings all have models and
+views, and the space switch has no fall-through arm left for a new space to hide
+in.
 
-What has not happened is a SwiftUI view compiled against the real framework, and
-that is section 1 rather than a claim of its own. Master Prompt #30 sequences the
-work this way deliberately: a planner evaluated against an unstable foundation
-cannot be debugged, so the decisions come first and the drawing follows.
+What remains is section 1 and nothing else: no SwiftUI view in this repository
+has ever been through a compiler. The models behind them are built and tested on
+every commit; the drawing is not.
 
 ## Resolved
 
@@ -143,4 +142,5 @@ problem. Resolved limitations stay here, with what closed them.
 | The tempo map held one segment, so a beat grid could not follow a recording that drifts | Sprint 1 — `prv-time::TempoMap` takes multiple segments |
 | Processors had no way to address a parameter, so automation, MIDI mapping and plugin parameters had nowhere to point | Sprint 7 and after — `prv-project::ParameterAddress` names one, `prv-timeline::ParameterDescriptor` says what values it takes, and the renderer reads both |
 | Operations from a newer build were counted and dropped, so a relay stopped at a restart | Sprint 40 — carried operations are written into the log, re-emitted, and promoted after an upgrade |
+| Four of six spaces drew a placeholder, because the boundary could not answer what they would show | Sprint 44 — the timeline can be read and edited across the boundary, and every space has a model and a view |
 | The sync state machine did not reach the host, so a host would have reimplemented its rules | Sprint 42 — `prv-ffi::sync`, with the rules staying in the core |

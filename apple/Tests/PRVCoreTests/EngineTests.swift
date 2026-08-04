@@ -637,3 +637,94 @@ struct AnalysisTests {
         }
     }
 }
+
+@Suite("Editing a set")
+struct EditingTests {
+
+    /// An engine with three clips, laid end to end.
+    private func laidOut() throws -> (Engine, [UInt64]) {
+        let engine = try Engine(sampleRate: 48_000, channels: 2, maxBlockFrames: 512)
+        let clips = try (0..<3).map { index in
+            try engine.placeTrack(
+                track: UInt64(index + 1),
+                position: Int64(index) * 48_000,
+                length: 48_000
+            )
+        }
+        return (engine, clips)
+    }
+
+    @Test("the timeline can be read back clip by clip")
+    func readBack() throws {
+        let (engine, clips) = try laidOut()
+        let placements = try engine.placements()
+
+        #expect(placements.count == 3)
+        #expect(Set(placements.map(\.id)) == Set(clips))
+        #expect(placements.allSatisfy { $0.length == 48_000 })
+        #expect(placements.first { $0.id == clips[1] }?.position == 48_000)
+        #expect(placements.first { $0.id == clips[2] }?.end == 144_000)
+    }
+
+    @Test("moving, trimming and removing all go through the history")
+    func editsAreHistory() throws {
+        let (engine, clips) = try laidOut()
+        let before = try engine.historyLength()
+
+        try engine.move(placement: clips[0], to: 96_000, lane: 1)
+        try engine.trim(placement: clips[1], to: 24_000)
+        try engine.remove(placement: clips[2])
+
+        #expect(try engine.historyLength() > before)
+        #expect(try engine.placementCount() == 2)
+
+        let placements = try engine.placements()
+        #expect(placements.first { $0.id == clips[0] }?.position == 96_000)
+        #expect(placements.first { $0.id == clips[0] }?.lane == 1)
+        #expect(placements.first { $0.id == clips[1] }?.length == 24_000)
+    }
+
+    @Test("an edit is reversible, because nothing was ever deleted")
+    func undoRestores() throws {
+        let (engine, clips) = try laidOut()
+        try engine.remove(placement: clips[0])
+        #expect(try engine.placementCount() == 2)
+
+        #expect(try engine.undoAvailability() == .available)
+        #expect(try engine.undo() > 0)
+        #expect(try engine.placementCount() == 3)
+        #expect(try engine.placements().contains { $0.id == clips[0] })
+    }
+
+    @Test("a clip that is not there is refused, and the history is untouched")
+    func refusedEditsLeaveNoTrace() throws {
+        let (engine, _) = try laidOut()
+        let before = try engine.historyLength()
+
+        #expect(throws: EngineError.invalidArgument) {
+            try engine.move(placement: 9_999, to: 0, lane: 0)
+        }
+        #expect(throws: EngineError.invalidArgument) {
+            try engine.trim(placement: 9_999, to: 1_000)
+        }
+        #expect(throws: EngineError.invalidArgument) {
+            try engine.remove(placement: 9_999)
+        }
+        #expect(try engine.historyLength() == before, "a refused edit reached the log")
+    }
+
+    @Test("a length that would lose the clip is refused")
+    func trimRefusesNothing() throws {
+        let (engine, clips) = try laidOut()
+        #expect(throws: EngineError.invalidArgument) {
+            try engine.trim(placement: clips[0], to: 0)
+        }
+    }
+
+    @Test("nothing to undo is a state, not a failure")
+    func nothingToUndo() throws {
+        let engine = try Engine(sampleRate: 48_000, channels: 2, maxBlockFrames: 512)
+        #expect(try engine.undoAvailability() == .nothingToUndo)
+        #expect(try engine.undo() == 0)
+    }
+}

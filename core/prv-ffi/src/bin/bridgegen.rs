@@ -127,6 +127,28 @@ fn declarations() -> Vec<Declaration> {
         *mut u64,
         *mut u64,
     ) -> i32 = prv_ffi::exports::prv_engine_sync_merge;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Engine,
+        u64,
+        *mut u64,
+        *mut u64,
+        *mut i64,
+        *mut i64,
+        *mut u32,
+        *mut i64,
+    ) -> i32 = prv_ffi::exports::prv_engine_placement;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, u64, i64, u32, i64) -> i32 =
+        prv_ffi::exports::prv_engine_move_placement;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, u64, i64, i64) -> i32 =
+        prv_ffi::exports::prv_engine_trim_placement;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, u64, i64) -> i32 =
+        prv_ffi::exports::prv_engine_remove_placement;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, i64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_undo;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, i64, *mut i32) -> i32 =
+        prv_ffi::exports::prv_engine_undo_available;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_log_length;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_carried_count;
     let _: unsafe extern "C" fn(*mut *mut prv_ffi::Sync) -> i32 = prv_ffi::exports::prv_sync_create;
@@ -520,6 +542,79 @@ fn declarations() -> Vec<Declaration> {
                 "an older version relays rather than blocking. What it cannot do is",
                 "show them, so tell the user that some of the project was made with a",
                 "newer version of the app.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_move_placement(PrvEngine *engine, uint64_t placement, \
+                        int64_t position, uint32_t lane, int64_t timestamp_micros)",
+            doc: &[
+                "Moves a clip.",
+                "",
+                "Every edit is an operation on the log, so undo, version history,",
+                "comparison and synchronisation all work on it without anything further",
+                "being written.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_trim_placement(PrvEngine *engine, uint64_t placement, \
+                        int64_t length, int64_t timestamp_micros)",
+            doc: &["Changes how long a clip plays for."],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_remove_placement(PrvEngine *engine, \
+                        uint64_t placement, int64_t timestamp_micros)",
+            doc: &[
+                "Takes a clip off the timeline.",
+                "",
+                "Nothing is deleted: the operation that placed it stays in the log, so",
+                "undo restores it and the history still says what happened.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_undo(PrvEngine *engine, int64_t timestamp_micros, \
+                        uint64_t *out_operations)",
+            doc: &[
+                "Undoes this device's last edit, writing how many operations it took.",
+                "",
+                "Zero means nothing happened, and there are two reasons for that.",
+                "prv_engine_undo_available tells them apart.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_undo_available(const PrvEngine *engine, \
+                        int64_t timestamp_micros, int32_t *out_reason)",
+            doc: &[
+                "Whether undo would do anything, and why not when it would not.",
+                "",
+                "0: there is something to undo. 1: there is nothing. 2: another device",
+                "changed the same thing afterwards, and undoing would discard their",
+                "work — for which there is no correct silent answer, so it refuses.",
+                "3: the core gave a reason this build of the boundary has no name for.",
+                "",
+                "A host shows the last two differently: one is a disabled button and",
+                "the other is a sentence.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_log_length(const PrvEngine *engine, \
+                        uint64_t *out_length)",
+            doc: &["How many operations the project's history holds."],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_placement(const PrvEngine *engine, uint64_t index, \
+                        uint64_t *out_placement, uint64_t *out_track, int64_t *out_position, \
+                        int64_t *out_length, uint32_t *out_lane, int64_t *out_source_offset)",
+            doc: &[
+                "Reads one clip of the timeline, by position in identity order.",
+                "",
+                "A timeline is drawn from these. The count and the total duration are",
+                "enough to say \"four tracks, thirty-eight minutes\" and not enough to",
+                "draw a single clip.",
+                "",
+                "Identity order rather than time order, deliberately: it is stable while",
+                "a user drags a clip, and a list that reordered itself under the hand",
+                "doing the dragging is why timelines flicker. Sort by out_position for",
+                "time order.",
             ],
         },
         Declaration {

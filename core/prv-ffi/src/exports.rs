@@ -531,6 +531,184 @@ pub unsafe extern "C" fn prv_engine_sync_merge(
     .code()
 }
 
+/// Moves a clip.
+///
+/// Every edit is an operation on the log — ADR-0003 makes the project *be* its
+/// log — so undo, version history, comparison and synchronisation all work on it
+/// without anything further being written.
+///
+/// # Safety
+///
+/// `engine` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_move_placement(
+    engine: *mut Engine,
+    placement: u64,
+    position: i64,
+    lane: u32,
+    timestamp_micros: i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(engine) }?.move_placement(placement, position, lane, timestamp_micros)
+    })
+    .code()
+}
+
+/// Changes how long a clip plays for.
+///
+/// # Safety
+///
+/// `engine` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_trim_placement(
+    engine: *mut Engine,
+    placement: u64,
+    length: i64,
+    timestamp_micros: i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(engine) }?.trim_placement(placement, length, timestamp_micros)
+    })
+    .code()
+}
+
+/// Takes a clip off the timeline.
+///
+/// Nothing is deleted: the operation that placed it stays in the log, so undo
+/// restores it and the history still says what happened.
+///
+/// # Safety
+///
+/// `engine` must be live.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_remove_placement(
+    engine: *mut Engine,
+    placement: u64,
+    timestamp_micros: i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        unsafe { as_mut(engine) }?.remove_placement(placement, timestamp_micros)
+    })
+    .code()
+}
+
+/// Undoes this device's last edit, writing how many operations it took.
+///
+/// Zero means nothing happened, and there are two reasons for that:
+/// [`prv_engine_undo_available`] tells them apart. A host shows them
+/// differently, because "nothing to undo" is a disabled button and "somebody
+/// else moved this since" is a sentence.
+///
+/// # Safety
+///
+/// `engine` must be live and `out_operations` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_undo(
+    engine: *mut Engine,
+    timestamp_micros: i64,
+    out_operations: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let count = unsafe { as_mut(engine) }?.undo(timestamp_micros)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_operations) }? = count;
+        Ok(())
+    })
+    .code()
+}
+
+/// Whether undo would do anything, and why not when it would not.
+///
+/// Zero: there is something to undo. One: there is nothing. Two: another device
+/// changed the same thing afterwards, and undoing would discard their work —
+/// which Master Prompt #24 forbids, and for which there is no correct silent
+/// answer.
+///
+/// # Safety
+///
+/// `engine` must be live and `out_reason` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_undo_available(
+    engine: *const Engine,
+    timestamp_micros: i64,
+    out_reason: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let reason = unsafe { as_ref(engine) }?.undo_is_available(timestamp_micros);
+        // SAFETY: as above.
+        *unsafe { as_mut(out_reason) }? = reason;
+        Ok(())
+    })
+    .code()
+}
+
+/// How many operations the project's history holds.
+///
+/// # Safety
+///
+/// `engine` must be live and `out_length` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_log_length(engine: *const Engine, out_length: *mut u64) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let length = unsafe { as_ref(engine) }?.log_length();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_length) }? = length;
+        Ok(())
+    })
+    .code()
+}
+
+/// Reads one clip of the timeline, by position in identity order.
+///
+/// Identity order rather than time order, deliberately: it is stable while a
+/// user drags a clip, and a list that reordered itself under the hand doing the
+/// dragging is why timelines flicker. Sort by `out_position` for time order.
+///
+/// # Safety
+///
+/// `engine` must be live and every out-pointer writable.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a placement is six independent facts, and bundling them into a \
+              struct would put a layout promise into the ABI for no benefit"
+)]
+pub unsafe extern "C" fn prv_engine_placement(
+    engine: *const Engine,
+    index: u64,
+    out_placement: *mut u64,
+    out_track: *mut u64,
+    out_position: *mut i64,
+    out_length: *mut i64,
+    out_lane: *mut u32,
+    out_source_offset: *mut i64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let placement = unsafe { as_ref(engine) }?.placement(index)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_placement) }? = placement.id;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_track) }? = placement.track;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_position) }? = placement.position;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_length) }? = placement.length;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_lane) }? = placement.lane;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_source_offset) }? = placement.source_offset;
+        Ok(())
+    })
+    .code()
+}
+
 /// How many operations this project holds that were made by a newer build.
 ///
 /// Non-zero means part of the project was made with a newer version of the

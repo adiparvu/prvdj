@@ -343,7 +343,7 @@ public final class Engine {
         timestamp: Date = Date()
     ) throws -> UInt64 {
         var placement: UInt64 = 0
-        let micros = Int64(timestamp.timeIntervalSince1970 * 1_000_000)
+        let micros = Self.micros(timestamp)
         try EngineError.check(
             prv_engine_place_track(
                 handle,
@@ -418,6 +418,92 @@ public final class Engine {
         var value: Int32 = 0
         try EngineError.check(prv_engine_render_was_complete(handle, &value))
         return value != 0
+    }
+
+    // MARK: - The timeline
+
+    /// Every clip on the timeline.
+    ///
+    /// In identity order, which is stable while a user drags one. A view that
+    /// wants time order sorts them — it has the positions.
+    public func placements() throws -> [Placement] {
+        let count = try placementCount()
+        return try (0..<count).map { index in
+            var id: UInt64 = 0
+            var track: UInt64 = 0
+            var position: Int64 = 0
+            var length: Int64 = 0
+            var lane: UInt32 = 0
+            var sourceOffset: Int64 = 0
+            try EngineError.check(
+                prv_engine_placement(
+                    handle, index, &id, &track, &position, &length, &lane, &sourceOffset
+                )
+            )
+            return Placement(
+                id: id,
+                track: track,
+                position: position,
+                length: length,
+                lane: lane,
+                sourceOffset: sourceOffset
+            )
+        }
+    }
+
+    /// Moves a clip.
+    public func move(
+        placement: UInt64,
+        to position: Int64,
+        lane: UInt32,
+        timestamp: Date = Date()
+    ) throws {
+        try EngineError.check(
+            prv_engine_move_placement(handle, placement, position, lane, Self.micros(timestamp))
+        )
+    }
+
+    /// Changes how long a clip plays for.
+    public func trim(placement: UInt64, to length: Int64, timestamp: Date = Date()) throws {
+        try EngineError.check(
+            prv_engine_trim_placement(handle, placement, length, Self.micros(timestamp))
+        )
+    }
+
+    /// Takes a clip off the timeline. Reversible: nothing was deleted.
+    public func remove(placement: UInt64, timestamp: Date = Date()) throws {
+        try EngineError.check(
+            prv_engine_remove_placement(handle, placement, Self.micros(timestamp))
+        )
+    }
+
+    /// Undoes this device's last edit. Returns how many operations it took.
+    @discardableResult
+    public func undo(timestamp: Date = Date()) throws -> UInt64 {
+        var count: UInt64 = 0
+        try EngineError.check(prv_engine_undo(handle, Self.micros(timestamp), &count))
+        return count
+    }
+
+    /// Whether undo would do anything, and why not when it would not.
+    public func undoAvailability(timestamp: Date = Date()) throws -> UndoAvailability {
+        var reason: Int32 = 0
+        try EngineError.check(
+            prv_engine_undo_available(handle, Self.micros(timestamp), &reason)
+        )
+        return UndoAvailability(code: reason)
+    }
+
+    /// How many operations the project's history holds.
+    public func historyLength() throws -> UInt64 {
+        var value: UInt64 = 0
+        try EngineError.check(prv_engine_log_length(handle, &value))
+        return value
+    }
+
+    /// The core has no clock of its own, so the caller supplies the time.
+    static func micros(_ date: Date) -> Int64 {
+        Int64(date.timeIntervalSince1970 * 1_000_000)
     }
 
     // MARK: - Synchronisation
@@ -566,4 +652,79 @@ public struct SyncReport: Equatable, Sendable {
 
     /// Whether anything arrived that this build cannot show.
     public var needsANewerVersion: Bool { carried > 0 }
+}
+
+
+/// One clip on the timeline.
+public struct Placement: Sendable, Equatable, Identifiable {
+    /// Stable for as long as the clip exists.
+    public let id: UInt64
+    /// The library track it plays.
+    public let track: UInt64
+    /// Where it starts, in frames.
+    public let position: Int64
+    /// How long it plays for.
+    public let length: Int64
+    /// Which lane it sits on.
+    public let lane: UInt32
+    /// How far into its media it begins.
+    public let sourceOffset: Int64
+
+    public init(
+        id: UInt64,
+        track: UInt64,
+        position: Int64,
+        length: Int64,
+        lane: UInt32,
+        sourceOffset: Int64
+    ) {
+        self.id = id
+        self.track = track
+        self.position = position
+        self.length = length
+        self.lane = lane
+        self.sourceOffset = sourceOffset
+    }
+
+    /// One past the last frame it covers.
+    public var end: Int64 { position + length }
+}
+
+/// Whether undo would do anything, and why not when it would not.
+public enum UndoAvailability: Sendable, Equatable {
+    /// There is something to undo.
+    case available
+    /// This device has made no edit that is still the latest on its target.
+    case nothingToUndo
+    /// Another device changed the same thing afterwards.
+    ///
+    /// Undoing would put it back where it was before either edit, discarding
+    /// their work without saying so. There is no correct silent answer, so it
+    /// refuses — and a host says this out loud rather than greying a button.
+    case supersededByAnotherDevice
+    /// A reason this build of the wrapper does not know.
+    case unrecognised(code: Int32)
+
+    init(code: Int32) {
+        self =
+            switch code {
+            case 0: .available
+            case 1: .nothingToUndo
+            case 2: .supersededByAnotherDevice
+            default: .unrecognised(code: code)
+            }
+    }
+
+    /// Whether an undo control should be enabled.
+    public var isAvailable: Bool { self == .available }
+
+    /// A stable identifier, for localisation.
+    public var key: String {
+        switch self {
+        case .available: "undo.available"
+        case .nothingToUndo: "undo.nothing"
+        case .supersededByAnotherDevice: "undo.superseded"
+        case .unrecognised(let code): "undo.unrecognised.\(code)"
+        }
+    }
 }

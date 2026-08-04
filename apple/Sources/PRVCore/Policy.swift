@@ -56,6 +56,13 @@ public enum Tier: Sendable, CaseIterable, Comparable {
     case professional
     case studio
 
+    /// A stable identifier for the name a user reads.
+    ///
+    /// A key rather than a word, for the same reason every other label in this
+    /// layer is one: prose here is prose that has to be found again when it is
+    /// translated.
+    public var titleKey: String { "tier.\(self)" }
+
     var code: Int32 {
         switch self {
         case .free: PRV_TIER_FREE.rawValue

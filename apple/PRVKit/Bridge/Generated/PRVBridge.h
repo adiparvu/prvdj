@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 10
+#define PRV_ABI_MINOR 11
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -542,6 +542,77 @@ int32_t prv_engine_sync_outbound(const PrvEngine *engine, uint8_t *into,
 int32_t prv_engine_sync_merge(PrvEngine *engine, const uint8_t *bytes, uint64_t len,
                               uint64_t *out_applied, uint64_t *out_already_present,
                               uint64_t *out_conflicts, uint64_t *out_carried);
+
+/*
+ * Moves a clip.
+ *
+ * Every edit is an operation on the log, so undo, version history,
+ * comparison and synchronisation all work on it without anything further
+ * being written.
+ */
+int32_t prv_engine_move_placement(PrvEngine *engine, uint64_t placement,
+                                  int64_t position, uint32_t lane,
+                                  int64_t timestamp_micros);
+
+/*
+ * Changes how long a clip plays for.
+ */
+int32_t prv_engine_trim_placement(PrvEngine *engine, uint64_t placement, int64_t length,
+                                  int64_t timestamp_micros);
+
+/*
+ * Takes a clip off the timeline.
+ *
+ * Nothing is deleted: the operation that placed it stays in the log, so
+ * undo restores it and the history still says what happened.
+ */
+int32_t prv_engine_remove_placement(PrvEngine *engine, uint64_t placement,
+                                    int64_t timestamp_micros);
+
+/*
+ * Undoes this device's last edit, writing how many operations it took.
+ *
+ * Zero means nothing happened, and there are two reasons for that.
+ * prv_engine_undo_available tells them apart.
+ */
+int32_t prv_engine_undo(PrvEngine *engine, int64_t timestamp_micros,
+                        uint64_t *out_operations);
+
+/*
+ * Whether undo would do anything, and why not when it would not.
+ *
+ * 0: there is something to undo. 1: there is nothing. 2: another device
+ * changed the same thing afterwards, and undoing would discard their
+ * work — for which there is no correct silent answer, so it refuses.
+ * 3: the core gave a reason this build of the boundary has no name for.
+ *
+ * A host shows the last two differently: one is a disabled button and
+ * the other is a sentence.
+ */
+int32_t prv_engine_undo_available(const PrvEngine *engine, int64_t timestamp_micros,
+                                  int32_t *out_reason);
+
+/*
+ * How many operations the project's history holds.
+ */
+int32_t prv_engine_log_length(const PrvEngine *engine, uint64_t *out_length);
+
+/*
+ * Reads one clip of the timeline, by position in identity order.
+ *
+ * A timeline is drawn from these. The count and the total duration are
+ * enough to say "four tracks, thirty-eight minutes" and not enough to
+ * draw a single clip.
+ *
+ * Identity order rather than time order, deliberately: it is stable while
+ * a user drags a clip, and a list that reordered itself under the hand
+ * doing the dragging is why timelines flicker. Sort by out_position for
+ * time order.
+ */
+int32_t prv_engine_placement(const PrvEngine *engine, uint64_t index,
+                             uint64_t *out_placement, uint64_t *out_track,
+                             int64_t *out_position, int64_t *out_length,
+                             uint32_t *out_lane, int64_t *out_source_offset);
 
 /*
  * How many operations this project holds that a newer build made.

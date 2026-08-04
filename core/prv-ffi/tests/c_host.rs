@@ -402,6 +402,57 @@ int main(void) {
     prv_sync_destroy(sync);
     prv_sync_destroy(NULL);
 
+    /* Editing a set, and undoing it — the mix editor's whole vocabulary. */
+    uint64_t clip = 0;
+    CHECK(prv_engine_place_track(engine, 11, 48000, 4096, 0, 0, 5000, &clip) == PRV_OK,
+          "a clip would not be placed");
+
+    uint64_t clip_count = 0;
+    CHECK(prv_engine_placement_count(engine, &clip_count) == PRV_OK, "the count could not be read");
+
+    uint64_t read_id = 0, read_track = 0;
+    int64_t read_position = 0, read_length = 0, read_offset = 0;
+    uint32_t read_lane = 0;
+    int found_clip = 0;
+    for (uint64_t index = 0; index < clip_count; index += 1) {
+        CHECK(prv_engine_placement(engine, index, &read_id, &read_track, &read_position,
+                                   &read_length, &read_lane, &read_offset) == PRV_OK,
+              "a clip could not be read");
+        if (read_id == clip) {
+            found_clip = 1;
+            CHECK(read_track == 11, "the clip names the wrong track");
+            CHECK(read_position == 48000, "the clip is in the wrong place");
+            CHECK(read_length == 4096, "the clip is the wrong length");
+        }
+    }
+    CHECK(found_clip, "the clip that was just placed could not be read back");
+
+    CHECK(prv_engine_placement(engine, clip_count, &read_id, &read_track, &read_position,
+                               &read_length, &read_lane, &read_offset) == PRV_INVALID_ARGUMENT,
+          "a clip past the end was invented");
+
+    CHECK(prv_engine_move_placement(engine, clip, 96000, 1, 6000) == PRV_OK, "the move failed");
+    CHECK(prv_engine_trim_placement(engine, clip, 2048, 6000) == PRV_OK, "the trim failed");
+    CHECK(prv_engine_trim_placement(engine, clip, 0, 6000) == PRV_INVALID_ARGUMENT,
+          "a clip was trimmed to nothing");
+    CHECK(prv_engine_move_placement(engine, 9999, 0, 0, 6000) == PRV_INVALID_ARGUMENT,
+          "a clip nobody placed was moved");
+
+    int32_t undo_reason = -1;
+    CHECK(prv_engine_undo_available(engine, 7000, &undo_reason) == PRV_OK,
+          "undo availability could not be read");
+    CHECK(undo_reason == 0, "an edit that just happened could not be undone");
+
+    uint64_t undone = 0;
+    CHECK(prv_engine_undo(engine, 7000, &undone) == PRV_OK, "the undo failed");
+    CHECK(undone > 0, "the undo did nothing");
+
+    uint64_t history = 0;
+    CHECK(prv_engine_log_length(engine, &history) == PRV_OK, "the history could not be read");
+    CHECK(history > 0, "an edited project has no history");
+
+    CHECK(prv_engine_remove_placement(engine, clip, 8000) == PRV_OK, "the removal failed");
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");
