@@ -188,6 +188,7 @@ import PRVKit
         private let onRemoveClip: (UInt64) -> Void
         private let onUndo: () -> Void
         private let onConsent: (Purpose, Bool) -> Void
+        private let onOpenProject: (String) -> Void
 
         public init(
             library: LibraryModel,
@@ -203,7 +204,8 @@ import PRVKit
             onAdopt: @escaping (Int) -> Void,
             onRemoveClip: @escaping (UInt64) -> Void,
             onUndo: @escaping () -> Void,
-            onConsent: @escaping (Purpose, Bool) -> Void
+            onConsent: @escaping (Purpose, Bool) -> Void,
+            onOpenProject: @escaping (String) -> Void
         ) {
             self.library = library
             self.planning = planning
@@ -219,6 +221,7 @@ import PRVKit
             self.onRemoveClip = onRemoveClip
             self.onUndo = onUndo
             self.onConsent = onConsent
+            self.onOpenProject = onOpenProject
         }
 
         public var body: some View {
@@ -238,7 +241,11 @@ import PRVKit
                     // four of them stayed empty for as long as they did.
                     switch space {
                     case .home:
-                        HomeSpace(model: home, onGo: { space = StudioWindow.destination(from: home) })
+                        HomeSpace(
+                            model: home,
+                            onGo: { space = StudioWindow.destination(from: home) },
+                            onOpen: onOpenProject
+                        )
                     case .library:
                         LibrarySpace(model: library)
                     case .aiStudio:

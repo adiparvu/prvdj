@@ -876,6 +876,61 @@ empty for as long as they did: a fall-through renders a placeholder, and a
 placeholder compiles. A space added to the enum is now a compile error until
 somebody decides what it shows.
 
+### Sprint 45 — a project that survives quitting
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv_engine_document` | Completed | Verified | The whole project, in the format synchronisation already uses |
+| Opening needs no call of its own | Completed | Verified | A project file is a message to your future self |
+| `Session.save(to:named:)` / `open(from:named:)` | Completed | **Verified on Linux** | Through the store port, so a test writes to a temporary directory |
+| The placement allocator absorbs a file's identities | **Fixed** | Verified | A defect a test found; see below |
+| Studio saves after every edit, opens on launch | Completed | **Verified on Linux** | The document is kilobytes, so the cost is nothing |
+| Real projects on the home screen | Completed | **Verified on Linux** | The list is what the store holds, not a concept invented for a screen |
+| ABI minor version 1.12 | Completed | Verified | Calls added, nothing existing moved |
+
+**`FileProjectStore` had existed for sprints, worked, was tested — and nothing
+had ever called it.** The port even used the extension `.prvlog`, which
+anticipated the answer: a project file is a log. What was missing was anything to
+produce the bytes.
+
+**One format, not two.** A saved project is the same encoding synchronisation
+uses, produced for a reader that has seen nothing — because "everything I have"
+and "everything a new peer would need" are the same set of operations. Two
+formats would mean two things to keep in step and one of them getting less
+attention. It also means a project saved by an older build and reopened by a
+newer one recovers the operations the older one could only carry, through the
+promotion built in Sprint 40.
+
+**Opening deliberately has no call of its own.** A fresh engine and a merge *is*
+what opening means. Writing a second path would have been writing a second
+implementation of the same thing.
+
+### The defect that would have eaten somebody's set
+
+Writing "adding a track after opening does not overwrite one that was saved"
+failed, and the reason was worth the sprint on its own.
+
+Placement identities come from a counter that lives in memory. Operations arrive
+from elsewhere — a peer, or a project file, which is the same thing — carrying
+placements *this same device* allocated in an earlier session, and the counter
+knew nothing about them. So opening a saved project and adding one track re-used
+an identity the project already held, and the new `PlaceTrack` overwrote an
+existing clip in the fold.
+
+A track vanished. Silently. On the most ordinary action there is, in a product
+whose entire premise is that it does not lose work.
+
+The fix is to absorb the identities from the log after a merge, scanned from the
+operations rather than from the folded state — a removed placement still owns its
+number, and re-using it would collide with the operations that placed and removed
+it. It runs after a merge rather than on every refold, because a merge is rare
+and an edit is not.
+
+This is the second identity defect this project has found in three sprints, both
+by writing the test that says what a user would expect. The first was two devices
+naming the same placement; this one is one device naming the same placement
+twice, a session apart. Neither was found by reading the code.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

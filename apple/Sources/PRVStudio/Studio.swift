@@ -68,10 +68,36 @@ public final class Studio {
         tierKey: "tier.free"
     )
 
+    /// Where projects are kept.
+    ///
+    /// A port rather than a path, so a test writes to a temporary directory and
+    /// the application writes to the user's documents without this class
+    /// knowing the difference.
+    private var store: ProjectStore?
+
+    /// What the current project is called.
+    ///
+    /// One name, and it is always saved under it. A product with an unsaved
+    /// document has to ask before quitting, has to draw a dot in the title bar,
+    /// and eventually loses somebody's evening anyway.
+    private var projectName = "untitled"
+
     /// Where synchronisation is, for the installation rather than the project.
     private var sync: Sync?
 
     public init() {}
+
+    /// Where projects live.
+    ///
+    /// Application Support rather than Documents: these are the application's
+    /// own files in its own format, and a folder of `.prvlog` files in somebody's
+    /// Documents is clutter they did not ask for. Exporting a set to a place
+    /// they chose is a different act, and belongs to a file picker.
+    private static var projectDirectory: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("PRVStudio/Projects", isDirectory: true)
+    }
 
     /// Whether anything currently leaves the device.
     public var sendsAnything: Bool { policy?.anythingLeavesTheDevice ?? false }
@@ -98,7 +124,17 @@ public final class Studio {
             session = try Session(decoder: InMemoryDecoder(tracks: [:]), output: output)
             policy = try Policy()
             experience = try Experience()
+            store = FileProjectStore(directory: Self.projectDirectory)
             isReady = true
+
+            // Whatever was open last time. A project the user left behind is
+            // the first thing they expect to see, and the alternative — an
+            // empty window with their evening still on disk somewhere — is the
+            // reason people distrust applications that can lose work.
+            if let store, let last = (try? store.names())?.sorted().first {
+                projectName = last
+                _ = try? session?.open(from: store, named: last)
+            }
             refresh()
         } catch {
             failure = String(describing: error)
@@ -189,12 +225,60 @@ public final class Studio {
     ///
     /// One snapshot rather than four reads, so the interface cannot show a
     /// playhead from one moment beside a state from another.
+    /// Saves the project under its current name.
+    ///
+    /// # Why this happens after every edit rather than when somebody asks
+    ///
+    /// A document is kilobytes — the cloud specification says a project's whole
+    /// editing history is typically a few, because it holds operations rather
+    /// than audio — so writing it after each edit costs almost nothing, and it
+    /// removes the entire category of "did I save?" from the product.
+    ///
+    /// A failure is reported and not thrown. The edit already happened; telling
+    /// the user their work is in memory but not on disk is the honest thing, and
+    /// undoing their edit because a disk was full would be worse than the
+    /// problem.
+    public func save() {
+        guard let session, let store else { return }
+        do {
+            try session.save(to: store, named: projectName)
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
+    /// Opens a saved project, replacing whatever is open.
+    ///
+    /// The session is rebuilt rather than merged into: opening into a session
+    /// that already holds a project combines the two, which is a real thing to
+    /// want and a different one.
+    public func open(named name: String) {
+        guard let store else { return }
+        do {
+            let fresh = try Session(decoder: InMemoryDecoder(tracks: [:]), output: nil)
+            guard try fresh.open(from: store, named: name) else {
+                failure = "no project named \(name)"
+                return
+            }
+            session = fresh
+            projectName = name
+            alternatives = []
+            refresh()
+        } catch {
+            failure = String(describing: error)
+        }
+    }
+
+    /// Every project on disk.
+    public var projectNames: [String] { (try? store?.names()) as? [String] ?? [] }
+
     /// Removes a clip from the set.
     public func removeClip(_ placement: UInt64) {
         guard let session else { return }
         do {
             try session.remove(placement: placement)
             refresh()
+            save()
         } catch {
             failure = String(describing: error)
         }
@@ -210,6 +294,7 @@ public final class Studio {
         do {
             try session.undo()
             refresh()
+            save()
         } catch {
             failure = String(describing: error)
         }
@@ -267,7 +352,9 @@ public final class Studio {
             projectFrames: snapshot.duration,
             sampleRate: session.sampleRate,
             planOptions: alternatives.count,
-            sync: syncModel
+            sync: syncModel,
+            projects: projectNames,
+            openProject: projectName
         )
         mix = MixEditorModel(
             clips: clips,

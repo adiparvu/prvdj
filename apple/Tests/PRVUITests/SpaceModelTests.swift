@@ -245,3 +245,31 @@ struct SpaceModelTests {
         #expect(noisy.needsAttention)
     }
 }
+
+@Suite("Projects on the home screen")
+struct HomeProjectTests {
+
+    @Test("the open project is not offered as something to open")
+    func openOneIsExcluded() {
+        let home = HomeModel(
+            trackCount: 3, projectFrames: 0, sampleRate: 48_000, planOptions: 0,
+            projects: ["friday", "saturday", "sunday"], openProject: "saturday"
+        )
+        #expect(home.otherProjects == ["friday", "sunday"])
+    }
+
+    @Test("with nothing saved there is nothing to list")
+    func nothingSaved() {
+        let home = HomeModel(trackCount: 0, projectFrames: 0, sampleRate: 48_000, planOptions: 0)
+        #expect(home.otherProjects.isEmpty)
+    }
+
+    @Test("the list is ordered, so it does not reshuffle between launches")
+    func ordered() {
+        let home = HomeModel(
+            trackCount: 0, projectFrames: 0, sampleRate: 48_000, planOptions: 0,
+            projects: ["zeta", "alpha", "mid"], openProject: nil
+        )
+        #expect(home.otherProjects == ["alpha", "mid", "zeta"])
+    }
+}

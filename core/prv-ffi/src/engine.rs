@@ -32,6 +32,7 @@ use prv_time::{Frames, SampleRate, Tempo, TimeSignature};
 use prv_transport::{Transport, TransportEvent};
 
 use prv_project::wire;
+use prv_project::VersionVector;
 
 use crate::status::Status;
 
@@ -707,6 +708,47 @@ impl Engine {
         Ok(())
     }
 
+    /// Moves the placement allocator past every identity this device has
+    /// already spent, according to the log.
+    ///
+    /// # The defect this exists to prevent
+    ///
+    /// Placement identities are allocated from a counter that lives in memory.
+    /// Operations arrive from elsewhere — a peer, or a project file, which is
+    /// the same thing — carrying placements *this same device* allocated in an
+    /// earlier session. The counter knew nothing about them.
+    ///
+    /// So opening a saved project and adding one track re-used an identity the
+    /// project already held, and the new `PlaceTrack` overwrote an existing clip
+    /// in the fold. A track vanished, quietly, on the most ordinary action there
+    /// is. A test caught it; nothing else would have until a user did.
+    ///
+    /// Scanned from the log rather than from the folded state, because a
+    /// placement that has been removed still owns its number: re-using it would
+    /// collide with the operations that placed and removed it.
+    ///
+    /// Called after a merge rather than on every refold. A merge is rare — a
+    /// project is opened once and synchronised occasionally — and an edit is
+    /// not, so the linear scan belongs on the rare path.
+    fn absorb_placement_identities(&mut self) {
+        let base = placement_base(self.device);
+        let ceiling = base.saturating_add(u64::from(u32::MAX));
+
+        let highest = self
+            .log
+            .operations()
+            .filter_map(|operation| match &operation.payload {
+                OperationPayload::PlaceTrack { placement, .. } => Some(placement.get()),
+                _ => None,
+            })
+            .filter(|id| (base..=ceiling).contains(id))
+            .max();
+
+        if let Some(highest) = highest {
+            self.next_placement = self.next_placement.max(highest.saturating_add(1));
+        }
+    }
+
     /// Reserves a run of placement identities and returns the first.
     ///
     /// # Why this is not simply a counter
@@ -772,6 +814,37 @@ impl Engine {
         copy_out(&bytes, into)
     }
 
+    /// The whole project, as bytes.
+    ///
+    /// # A project file is a message to your future self
+    ///
+    /// It is the same encoding synchronisation uses, produced the same way, for
+    /// a reader that has seen nothing. That is not a shortcut: ADR-0003 says the
+    /// project *is* its log, so "everything I have" and "everything a new peer
+    /// would need" are the same set of operations, and giving them two formats
+    /// would mean two things to keep in step and one of them getting less
+    /// attention.
+    ///
+    /// It includes operations this build cannot interpret, so a project saved by
+    /// an older build and reopened by a newer one recovers them — the same
+    /// promotion that happens after an upgrade, from a file rather than a peer.
+    ///
+    /// Opening one needs no call of its own: a fresh engine and
+    /// [`Engine::sync_merge`] is exactly what opening means.
+    ///
+    /// Writes nothing and returns the size required when `into` is too small.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::Refused`] if the project will not fit a single message.
+    pub fn document(&self, into: &mut [u8]) -> Result<usize, Status> {
+        let everything = VersionVector::new();
+        let operations = self.log.operations_since(&everything);
+        let carried = self.log.carried_since(&everything);
+        let bytes = wire::encode_all(&operations, &carried).map_err(|_| Status::Refused)?;
+        copy_out(&bytes, into)
+    }
+
     /// Prepares the operations a peer has not seen, and reports their size.
     ///
     /// Held rather than returned, so that a host learns the exact size before it
@@ -829,6 +902,7 @@ impl Engine {
             .log
             .carry(&message.to_carried())
             .map_err(|_| Status::Refused)?;
+        self.absorb_placement_identities();
         self.refold()?;
         Ok(SyncReport {
             applied: report.applied.try_into().unwrap_or(u64::MAX),
@@ -1368,6 +1442,106 @@ mod tests {
         assert_eq!(returning.conflicts, 0, "an exchange conflicted");
         assert_eq!(here.placement_count(), 5);
         assert_eq!(there.placement_count(), 5);
+    }
+
+    #[test]
+    fn a_project_saved_and_opened_is_the_same_project() {
+        // What the application has never been able to do. Opening needs no call
+        // of its own: a fresh engine and a merge *is* what opening means,
+        // because a project file is a message to your future self.
+        let mut authored = engine(1);
+        for index in 0..5_u64 {
+            let position = i64::try_from(index).expect("small") * 4_096;
+            authored
+                .place_track(index + 1, position, 4_096, 0, 0, 1_000)
+                .expect("places");
+        }
+        let clip = authored.placement(0).expect("a clip").id;
+        authored
+            .move_placement(clip, 99_999, 1, 2_000)
+            .expect("moves");
+
+        let mut size = vec![0_u8; 0];
+        let needed = authored.document(&mut size).expect("sizes");
+        let mut document = vec![0_u8; needed];
+        assert_eq!(authored.document(&mut document).expect("writes"), needed);
+
+        let mut opened = engine(1);
+        let report = opened.sync_merge(&document).expect("opens");
+        assert_eq!(
+            report.conflicts, 0,
+            "opening a project conflicted with itself"
+        );
+
+        assert_eq!(opened.placement_count(), authored.placement_count());
+        assert_eq!(opened.duration(), authored.duration());
+        assert_eq!(opened.log_length(), authored.log_length());
+        for index in 0..opened.placement_count() {
+            assert_eq!(
+                opened.placement(index).expect("a clip"),
+                authored.placement(index).expect("a clip")
+            );
+        }
+    }
+
+    #[test]
+    fn editing_after_opening_does_not_reuse_a_number_the_file_already_used() {
+        // The failure this would otherwise have: the reopened project authors
+        // an operation with a sequence the file already spent, and the two are
+        // the same operation by name and different by content — which a merge
+        // reports as a conflict, on a project nobody else has touched.
+        let mut authored = engine(1);
+        authored
+            .place_track(1, 0, 4_096, 0, 0, 1_000)
+            .expect("places");
+        authored
+            .place_track(2, 4_096, 4_096, 0, 0, 1_000)
+            .expect("places");
+
+        let mut document = vec![0_u8; authored.document(&mut [][..]).expect("sizes")];
+        authored.document(&mut document).expect("writes");
+
+        let mut opened = engine(1);
+        opened.sync_merge(&document).expect("opens");
+        let before = opened.log_length();
+        opened
+            .place_track(3, 8_192, 4_096, 0, 0, 2_000)
+            .expect("places");
+
+        assert_eq!(opened.log_length(), before + 1, "an identity was reused");
+        assert_eq!(opened.placement_count(), 3);
+    }
+
+    #[test]
+    fn a_project_file_carries_what_this_build_cannot_read() {
+        // A project saved by an older build and reopened by a newer one recovers
+        // work the older one could only carry. Saving has to keep it for that to
+        // be possible at all.
+        let mut relay = engine(2);
+        relay
+            .sync_merge(&a_message_from_the_future(3, 1))
+            .expect("merges");
+        assert_eq!(relay.carried_count(), 1);
+
+        let mut document = vec![0_u8; relay.document(&mut [][..]).expect("sizes")];
+        relay.document(&mut document).expect("writes");
+
+        let mut opened = engine(2);
+        let report = opened.sync_merge(&document).expect("opens");
+        assert_eq!(report.carried, 1, "saving dropped what could not be read");
+        assert_eq!(opened.carried_count(), 1);
+    }
+
+    #[test]
+    fn an_empty_project_still_saves_to_something_that_opens() {
+        let empty = engine(1);
+        let mut document = vec![0_u8; empty.document(&mut [][..]).expect("sizes")];
+        empty.document(&mut document).expect("writes");
+        assert!(!document.is_empty(), "an empty project saved to nothing");
+
+        let mut opened = engine(1);
+        assert_eq!(opened.sync_merge(&document).expect("opens").applied, 0);
+        assert_eq!(opened.placement_count(), 0);
     }
 
     #[test]

@@ -38,7 +38,8 @@ import PRVUI
                     onAdopt: { studio.adopt($0) },
                     onRemoveClip: { studio.removeClip($0) },
                     onUndo: { studio.undo() },
-                    onConsent: { studio.setConsent($0, granted: $1) }
+                    onConsent: { studio.setConsent($0, granted: $1) },
+                    onOpenProject: { studio.open(named: $0) }
                 )
                 .task { studio.start() }
             }

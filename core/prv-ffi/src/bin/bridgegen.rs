@@ -113,6 +113,8 @@ fn declarations() -> Vec<Declaration> {
     let _: unsafe extern "C" fn(*mut prv_ffi::Engine, u64) -> i32 =
         prv_ffi::exports::prv_engine_set_device;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u8, u64, *mut u64) -> i32 =
+        prv_ffi::exports::prv_engine_document;
+    let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u8, u64, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_sync_state;
     let _: unsafe extern "C" fn(*mut prv_ffi::Engine, *const u8, u64, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_sync_prepare;
@@ -493,6 +495,24 @@ fn declarations() -> Vec<Declaration> {
                 "fleet — and wrong loudly: two devices sharing an identity produce",
                 "operations with the same name and different contents, which a merge",
                 "reports as a conflict rather than resolving by luck.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_document(const PrvEngine *engine, uint8_t *into, \
+                        uint64_t capacity, uint64_t *out_needed)",
+            doc: &[
+                "Writes the whole project, as bytes to save.",
+                "",
+                "The same encoding synchronisation uses, produced for a reader that has",
+                "seen nothing — because \"everything I have\" and \"everything a new peer",
+                "would need\" are the same operations, and two formats would mean two",
+                "things to keep in step.",
+                "",
+                "It carries operations this build cannot interpret, so a project saved",
+                "by an older build and reopened by a newer one recovers them.",
+                "",
+                "Opening one needs no call of its own: create an engine and hand the",
+                "bytes to prv_engine_sync_merge. That is what opening means.",
             ],
         },
         Declaration {

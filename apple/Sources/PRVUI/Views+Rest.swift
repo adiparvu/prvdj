@@ -22,10 +22,16 @@ import PRVKit
     public struct HomeSpace: View {
         private let model: HomeModel
         private let onGo: () -> Void
+        private let onOpen: (String) -> Void
 
-        public init(model: HomeModel, onGo: @escaping () -> Void) {
+        public init(
+            model: HomeModel,
+            onGo: @escaping () -> Void,
+            onOpen: @escaping (String) -> Void = { _ in }
+        ) {
             self.model = model
             self.onGo = onGo
+            self.onOpen = onOpen
         }
 
         public var body: some View {
@@ -54,6 +60,16 @@ import PRVKit
                     )
                 }
                 .buttonStyle(.borderedProminent)
+
+                if !model.otherProjects.isEmpty {
+                    Divider()
+                    Text(LocalizedStringKey("home.projects"))
+                        .font(.headline)
+                    ForEach(model.otherProjects, id: \.self) { name in
+                        Button(name) { onOpen(name) }
+                            .buttonStyle(.link)
+                    }
+                }
 
                 Spacer()
             }

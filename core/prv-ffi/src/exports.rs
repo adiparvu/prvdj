@@ -399,6 +399,48 @@ pub unsafe extern "C" fn prv_engine_set_device(engine: *mut Engine, device: u64)
     .code()
 }
 
+/// Writes the whole project, as bytes to save.
+///
+/// The same encoding synchronisation uses, produced for a reader that has seen
+/// nothing — because "everything I have" and "everything a new peer would need"
+/// are the same set of operations, and two formats would mean two things to keep
+/// in step.
+///
+/// It carries operations this build cannot interpret, so a project saved by an
+/// older build and reopened by a newer one recovers them.
+///
+/// Opening one needs no call of its own: create an engine and hand the bytes to
+/// [`prv_engine_sync_merge`]. That *is* what opening a project means.
+///
+/// Pass NULL and a capacity of zero to learn the size, then allocate once.
+///
+/// # Safety
+///
+/// `engine` must be live, `into` writable for `capacity` bytes, and `out_needed`
+/// writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_document(
+    engine: *const Engine,
+    into: *mut u8,
+    capacity: u64,
+    out_needed: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_ref(engine) }?;
+        // SAFETY: as above.
+        let buffer = unsafe { writable(into, capacity) }?;
+        let needed = engine.document(buffer)?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_needed) }? = needed.try_into().unwrap_or(u64::MAX);
+        if needed > buffer_capacity(capacity) {
+            return Err(Status::BufferTooSmall);
+        }
+        Ok(())
+    })
+    .code()
+}
+
 /// Writes what this project has seen, for a peer to answer.
 ///
 /// Writes to `out_needed` how many bytes the vector requires whether or not it

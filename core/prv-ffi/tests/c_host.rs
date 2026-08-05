@@ -453,6 +453,44 @@ int main(void) {
 
     CHECK(prv_engine_remove_placement(engine, clip, 8000) == PRV_OK, "the removal failed");
 
+    /* Saving a project and opening it again. Opening needs no call of its own:
+     * a project file is a message to your future self, so it arrives the same
+     * way a peer's work does. */
+    uint64_t document_len = 0;
+    CHECK(prv_engine_document(engine, NULL, 0, &document_len) == PRV_BUFFER_TOO_SMALL,
+          "a zero-length buffer was reported as sufficient");
+    CHECK(document_len > 0, "a project with clips in it saved to nothing");
+    CHECK(document_len <= sizeof outbound, "the document does not fit the test's buffer");
+    CHECK(prv_engine_document(engine, outbound, sizeof outbound, &document_len) == PRV_OK,
+          "the project could not be saved");
+
+    PrvEngine *reopened = NULL;
+    CHECK(prv_engine_create(48000, 2, 512, &reopened) == PRV_OK, "the reopened engine failed");
+    CHECK(prv_engine_sync_merge(reopened, outbound, document_len, &applied, &already, &conflicts,
+                                &carried) == PRV_OK,
+          "the saved project would not open");
+    CHECK(conflicts == 0, "a project conflicted with itself when reopened");
+
+    int64_t reopened_duration = 0;
+    CHECK(prv_engine_duration(reopened, &reopened_duration) == PRV_OK,
+          "the reopened duration could not be read");
+    CHECK(reopened_duration == duration, "the reopened project is a different length");
+
+    uint64_t reopened_clips = 0;
+    CHECK(prv_engine_placement_count(reopened, &reopened_clips) == PRV_OK,
+          "the reopened clip count could not be read");
+    CHECK(reopened_clips == count, "the reopened project has a different number of clips");
+
+    /* And adding a clip afterwards does not overwrite one that was saved. */
+    uint64_t added = 0;
+    CHECK(prv_engine_place_track(reopened, 77, 500000, 4096, 0, 0, 9000, &added) == PRV_OK,
+          "a clip would not be added to a reopened project");
+    uint64_t after_adding = 0;
+    CHECK(prv_engine_placement_count(reopened, &after_adding) == PRV_OK,
+          "the clip count could not be read");
+    CHECK(after_adding == reopened_clips + 1, "adding a clip overwrote a saved one");
+    prv_engine_destroy(reopened);
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");

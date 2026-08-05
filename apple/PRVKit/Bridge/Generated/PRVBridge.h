@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 11
+#define PRV_ABI_MINOR 12
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -496,6 +496,23 @@ int32_t prv_engine_render_was_complete(const PrvEngine *engine, int32_t *out_com
  * reports as a conflict rather than resolving by luck.
  */
 int32_t prv_engine_set_device(PrvEngine *engine, uint64_t device);
+
+/*
+ * Writes the whole project, as bytes to save.
+ *
+ * The same encoding synchronisation uses, produced for a reader that has
+ * seen nothing — because "everything I have" and "everything a new peer
+ * would need" are the same operations, and two formats would mean two
+ * things to keep in step.
+ *
+ * It carries operations this build cannot interpret, so a project saved
+ * by an older build and reopened by a newer one recovers them.
+ *
+ * Opening one needs no call of its own: create an engine and hand the
+ * bytes to prv_engine_sync_merge. That is what opening means.
+ */
+int32_t prv_engine_document(const PrvEngine *engine, uint8_t *into, uint64_t capacity,
+                            uint64_t *out_needed);
 
 /*
  * Writes what this project has seen, for a peer to answer.

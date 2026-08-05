@@ -240,3 +240,115 @@ struct FileProjectStoreTests {
         #expect(try store.load(named: "saturday") == nil, "a missing project is nil, not an error")
     }
 }
+
+@Suite("A project that survives quitting")
+struct ProjectPersistenceTests {
+
+    private func session() throws -> Session {
+        try Session(decoder: InMemoryDecoder(tracks: [:]), output: nil)
+    }
+
+    @Test("a project written to disk comes back the same project")
+    func roundTripThroughAFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let store = FileProjectStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let authored = try session()
+        for index in 0..<4 {
+            try authored.engineForTesting.placeTrack(
+                track: UInt64(index + 1),
+                position: Int64(index) * 48_000,
+                length: 48_000
+            )
+        }
+        try authored.save(to: store, named: "saturday")
+
+        // A different session, as a relaunch is.
+        let reopened = try session()
+        #expect(try reopened.open(from: store, named: "saturday"))
+
+        let before = try authored.placements()
+        let after = try reopened.placements()
+        #expect(after.count == 4)
+        #expect(Set(after.map(\.id)) == Set(before.map(\.id)))
+        #expect(try reopened.snapshot().duration == authored.snapshot().duration)
+    }
+
+    @Test("adding a track after opening does not overwrite one that was saved")
+    func openingDoesNotReuseIdentities() throws {
+        // The defect this test was written to catch, and did: the placement
+        // allocator lives in memory, so a reopened project would hand the next
+        // clip an identity the file had already spent — and the new placement
+        // overwrote an existing one in the fold. A track vanished on the most
+        // ordinary action there is.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let store = FileProjectStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let authored = try session()
+        for index in 0..<3 {
+            try authored.engineForTesting.placeTrack(
+                track: UInt64(index + 1),
+                position: Int64(index) * 48_000,
+                length: 48_000
+            )
+        }
+        try authored.save(to: store, named: "friday")
+
+        let reopened = try session()
+        #expect(try reopened.open(from: store, named: "friday"))
+        #expect(try reopened.placements().count == 3)
+
+        try reopened.engineForTesting.placeTrack(track: 9, position: 200_000, length: 48_000)
+        #expect(try reopened.placements().count == 4, "a saved clip was overwritten")
+
+        let identities = try reopened.placements().map(\.id)
+        #expect(Set(identities).count == identities.count, "two clips share an identity")
+    }
+
+    @Test("opening something that is not there is an answer, not a failure")
+    func openingWhatIsNotThere() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let store = FileProjectStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // What an application does on launch. Throwing would make an ordinary
+        // case into a failure the caller has to catch.
+        #expect(try session().open(from: store, named: "never-saved") == false)
+    }
+
+    @Test("an empty project saves to something that opens")
+    func emptyProject() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let store = FileProjectStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try session().save(to: store, named: "blank")
+        #expect(try store.names().contains("blank"))
+        #expect(try session().open(from: store, named: "blank"))
+    }
+
+    @Test("saving twice keeps one project, not two")
+    func savingIsIdempotent() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let store = FileProjectStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let live = try session()
+        try live.save(to: store, named: "set")
+        try live.engineForTesting.placeTrack(track: 1, position: 0, length: 48_000)
+        try live.save(to: store, named: "set")
+
+        #expect(try store.names().filter { $0 == "set" }.count == 1)
+
+        let reopened = try session()
+        #expect(try reopened.open(from: store, named: "set"))
+        #expect(try reopened.placements().count == 1, "the second save did not take")
+    }
+}

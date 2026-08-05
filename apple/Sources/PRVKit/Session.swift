@@ -296,6 +296,55 @@ public final class Session {
     }
 
     /// Everything an interface needs, consistent as of now.
+    /// The engine, for tests that need to place a track without a decoder.
+    ///
+    /// `internal` rather than public: everything above this module reaches the
+    /// engine through the session, which is what keeps the session able to
+    /// refresh its own view of things.
+    var engineForTesting: Engine { engine }
+
+    // MARK: - Keeping the work
+
+    /// The whole project, as bytes.
+    public func document() throws -> [UInt8] {
+        try engine.document()
+    }
+
+    /// Opens a saved project into this session.
+    ///
+    /// The session must be a fresh one. Opening into a session that already
+    /// holds a project merges the two — which is a real thing to want, and a
+    /// different one, and should be asked for by name rather than happening
+    /// because somebody opened a file at the wrong moment.
+    public func open(_ document: [UInt8]) throws {
+        try engine.open(document)
+    }
+
+    /// Writes the project to a store under a name.
+    ///
+    /// # Why the store is a port rather than a path
+    ///
+    /// ADR-0001 keeps the core away from the filesystem, and this layer is where
+    /// the filesystem lives — but *which* filesystem is still not this class's
+    /// business. A test writes to a temporary directory, the application writes
+    /// to the user's documents, and a future version writes to an iCloud
+    /// container, all without this method changing.
+    public func save(to store: ProjectStore, named name: String) throws {
+        try store.save(Data(document()), named: name)
+    }
+
+    /// Reads a project back, returning whether there was one to read.
+    ///
+    /// A missing project is not an error: asking to open something that is not
+    /// there is an ordinary thing for an application to do on launch, and
+    /// throwing would make the caller handle a normal case as a failure.
+    @discardableResult
+    public func open(from store: ProjectStore, named name: String) throws -> Bool {
+        guard let data = try store.load(named: name) else { return false }
+        try open([UInt8](data))
+        return true
+    }
+
     // MARK: - Editing the set
 
     /// Every clip on the timeline.

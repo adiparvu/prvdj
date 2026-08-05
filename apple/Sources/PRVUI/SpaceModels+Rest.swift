@@ -44,19 +44,41 @@ public struct HomeModel: Sendable, Equatable {
     public let sampleRate: UInt32
     public let planOptions: Int
     public let sync: SyncModel?
+    /// The projects on disk, and which one is open.
+    ///
+    /// Real, not invented. This screen used to have no way to know a project
+    /// existed after the application quit, because nothing saved one; now the
+    /// list is what the store actually holds.
+    public let projects: [String]
+    public let openProject: String?
 
     public init(
         trackCount: Int,
         projectFrames: Int64,
         sampleRate: UInt32,
         planOptions: Int,
-        sync: SyncModel? = nil
+        sync: SyncModel? = nil,
+        projects: [String] = [],
+        openProject: String? = nil
     ) {
         self.trackCount = trackCount
         self.projectFrames = projectFrames
         self.sampleRate = sampleRate
         self.planOptions = planOptions
         self.sync = sync
+        self.projects = projects
+        self.openProject = openProject
+    }
+
+    /// The projects that could be opened, newest name first and the open one
+    /// left out.
+    ///
+    /// Sorted by name rather than by date, because a modification date is a
+    /// fact about the filesystem and this layer does not have one. Naming that
+    /// limit is better than sorting by something and implying it means
+    /// recency.
+    public var otherProjects: [String] {
+        projects.filter { $0 != openProject }.sorted()
     }
 
     /// What the screen shows, in the order it shows it.

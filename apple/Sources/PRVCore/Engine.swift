@@ -518,6 +518,29 @@ public final class Engine {
         try EngineError.check(prv_engine_set_device(handle, device))
     }
 
+    /// The whole project, as bytes to save.
+    ///
+    /// The same encoding synchronisation uses, because "everything I have" and
+    /// "everything a new peer would need" are the same operations. It carries
+    /// what this build cannot interpret, so a project saved by an older version
+    /// and reopened by a newer one recovers that work.
+    public func document() throws -> [UInt8] {
+        try readBytes { into, capacity, needed in
+            prv_engine_document(handle, into, capacity, needed)
+        }
+    }
+
+    /// Opens a saved project into this engine.
+    ///
+    /// Deliberately the same call as receiving from a peer, because it is the
+    /// same act: a project file is a message to your future self. Open into a
+    /// fresh engine — opening into one that already holds a project merges the
+    /// two, which is a different thing and should be asked for by name.
+    @discardableResult
+    public func open(_ document: [UInt8]) throws -> SyncReport {
+        try merge(document)
+    }
+
     /// What this project has already seen, for a peer to answer.
     ///
     /// The first half of a synchronisation, and the reason it is incremental:
