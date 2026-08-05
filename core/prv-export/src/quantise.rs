@@ -164,6 +164,11 @@ impl Quantiser {
         }
 
         let width = bytes_per_sample(self.depth);
+        // Read before the loop borrows `into`, so the error can report what was
+        // actually offered. The branch below is unreachable — the length was
+        // checked above — but an error that names a size has to name the real
+        // one, because a host displays it.
+        let offered = into.len();
         let mut at: usize = 0;
         for frame in 0..frames {
             for channel in 0..channels {
@@ -173,9 +178,10 @@ impl Quantiser {
                     .ok_or(QuantiseError::ShapeTooLarge)?;
                 let sample = planar.get(index).copied().unwrap_or(0.0);
                 let end = at.checked_add(width).ok_or(QuantiseError::ShapeTooLarge)?;
-                let slot = into
-                    .get_mut(at..end)
-                    .ok_or(QuantiseError::BufferTooSmall { needed, given: 0 })?;
+                let slot = into.get_mut(at..end).ok_or(QuantiseError::BufferTooSmall {
+                    needed,
+                    given: offered,
+                })?;
                 self.encode(sample, slot);
                 at = end;
             }
@@ -235,7 +241,7 @@ impl Quantiser {
         }
     }
 
-    /// One dither sample: triangular, one bit peak to peak.
+    /// One dither sample: triangular, plus or minus one bit.
     ///
     /// Triangular rather than rectangular because the point of dither is to make
     /// the quantisation error independent of the signal, and only a triangular
@@ -243,7 +249,11 @@ impl Quantiser {
     /// modulation* audible on quiet passages, which is the artefact people
     /// actually hear.
     ///
-    /// Two independent rectangular draws summed give a triangular distribution.
+    /// The difference of two independent rectangular draws is triangular. Each
+    /// draw spans one bit, so the result spans two bits peak to peak, which is
+    /// the amplitude the independence argument requires. Halving it to make the
+    /// export quieter would put the modulation back — the noise floor is not the
+    /// thing being minimised here.
     fn noise(&mut self) -> f64 {
         let first = self.next_unit();
         let second = self.next_unit();
@@ -472,7 +482,8 @@ mod tests {
     #[test]
     fn dither_stays_within_a_bit_and_leaves_silence_recognisable() {
         // Dither is noise, and noise that was loud would be a defect of its own.
-        // One bit peak to peak is what triangular dither costs.
+        // Plus or minus one bit — two bits peak to peak — is what triangular
+        // dither costs, and it is the amplitude that buys the independence.
         let silence = vec![0.0_f32; 4_096];
         let mut writer = Quantiser::new(BitDepth::Sixteen, true, 3);
         let mut out = vec![0_u8; writer.byte_len(silence.len())];
@@ -490,5 +501,34 @@ mod tests {
             "the dither was {peak} bits peak, expected at most 1"
         );
         assert_eq!(writer.clipped(), 0);
+    }
+
+    #[test]
+    fn dither_actually_reaches_a_whole_bit_in_both_directions() {
+        // The other half of the bound above, and the one that catches the
+        // plausible mistake. `peak <= 1` also passes for dither half as loud —
+        // and triangular dither at plus or minus half a bit rounds to zero
+        // everywhere, so it is not dither at all, it is a comment claiming to be
+        // dither while the noise modulation it was added to remove stays.
+        //
+        // Silence is the strictest fixture: every non-zero sample here is noise
+        // and nothing else.
+        let silence = vec![0.0_f32; 4_096];
+        let mut writer = Quantiser::new(BitDepth::Sixteen, true, 3);
+        let mut out = vec![0_u8; writer.byte_len(silence.len())];
+        writer
+            .write(&silence, 1, silence.len(), &mut out)
+            .expect("writes");
+
+        let samples: Vec<i16> = out
+            .chunks_exact(2)
+            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        assert!(samples.contains(&1), "the dither never reached +1");
+        assert!(samples.contains(&-1), "the dither never reached -1");
+        assert!(
+            samples.contains(&0),
+            "every sample was displaced, which is not a triangular distribution"
+        );
     }
 }
