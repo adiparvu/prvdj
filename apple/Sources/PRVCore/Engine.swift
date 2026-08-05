@@ -400,6 +400,35 @@ public final class Engine {
         )
     }
 
+    /// Renders one block from a stated position, without moving the playhead.
+    ///
+    /// What an export uses. Rendering is a pure function of the project and a
+    /// position; the transport merely holds a position while somebody listens,
+    /// and using it would mean dragging the user's playhead through their set to
+    /// write a file and then putting it back.
+    ///
+    /// Throws ``EngineError/invalidState`` while the transport is playing: both
+    /// paths share a scratch buffer and a source, so two renders at once would
+    /// interleave each other's audio.
+    public func render(
+        at position: Int64,
+        into buffer: UnsafeMutableBufferPointer<Float>,
+        channels: Int,
+        frames: Int
+    ) throws {
+        guard let base = buffer.baseAddress else { throw EngineError.nullPointer }
+        guard buffer.count >= channels * frames else { throw EngineError.bufferTooSmall }
+        try EngineError.check(
+            prv_engine_render_at(
+                handle,
+                position,
+                base,
+                UInt32(clamping: channels),
+                UInt32(clamping: frames)
+            )
+        )
+    }
+
     /// A handle the audio thread may hold.
     ///
     /// Obtained once, on the thread that owns the engine, and handed to the

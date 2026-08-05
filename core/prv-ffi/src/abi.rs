@@ -31,11 +31,11 @@ pub const MAJOR: u32 = 1;
 
 /// The minor version. Additive.
 ///
-/// Raised to 1 when the planner was added, to 2 when analysis was, to 3 for consent and entitlement, to 4 for the collection, to 5 for delivery, to 6 for settings and notifications, to 7 for synchronisation, to 8 for carrying what a newer build made, to 9 for neighbours, to 10 for the synchronisation state, to 11 for reading the timeline, and to 12 for saving a project. Every call that existed at 1.0 has
+/// Raised to 1 when the planner was added, to 2 when analysis was, to 3 for consent and entitlement, to 4 for the collection, to 5 for delivery, to 6 for settings and notifications, to 7 for synchronisation, to 8 for carrying what a newer build made, to 9 for neighbours, to 10 for the synchronisation state, to 11 for reading the timeline, to 12 for saving a project, and to 13 for getting a set out as a file. Every call that existed at 1.0 has
 /// the same signature and the same meaning, which is exactly what a minor
 /// version promises — a host built against 1.0 keeps working and simply does
 /// not plan.
-pub const MINOR: u32 = 12;
+pub const MINOR: u32 = 13;
 
 /// The patch version.
 pub const PATCH: u32 = 0;

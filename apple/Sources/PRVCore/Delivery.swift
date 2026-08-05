@@ -36,7 +36,11 @@ public enum AudioFormat: Sendable, CaseIterable {
 }
 
 /// At what resolution.
-public enum BitDepth: Sendable, CaseIterable {
+///
+/// Used both to ask whether a master is fit to deliver and to write the file
+/// afterwards. One enum for both, because they are two halves of the same
+/// question and a second one would be a second place for the halves to disagree.
+public enum BitDepth: Sendable, Equatable, CaseIterable {
     case sixteen, twentyFour, float32
 
     var code: Int32 {
@@ -46,6 +50,22 @@ public enum BitDepth: Sendable, CaseIterable {
         case .float32: PRV_DEPTH_FLOAT32.rawValue
         }
     }
+
+    /// A stable identifier, for localisation.
+    public var key: String {
+        switch self {
+        case .sixteen: "depth.16"
+        case .twentyFour: "depth.24"
+        case .float32: "depth.float32"
+        }
+    }
+
+    /// Whether writing at this depth discards information from the mix.
+    ///
+    /// What decides whether dither is needed. A property of the depth rather
+    /// than a setting: the engine works in floating point, so anything narrower
+    /// is a reduction.
+    public var reducesResolution: Bool { self != .float32 }
 }
 
 /// Whether a master can go as it is.

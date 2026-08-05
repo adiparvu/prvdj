@@ -931,6 +931,67 @@ by writing the test that says what a user would expect. The first was two device
 naming the same placement; this one is one device naming the same placement
 twice, a session apart. Neither was found by reading the code.
 
+### Sprint 46 — getting a set out
+
+| Item | Status | Qualifier | Notes |
+|------|--------|-----------|-------|
+| `prv-export::quantise` | Completed | Verified | Dither, clipping and depth — the audible part of writing a file |
+| `prv_engine_render_at` | Completed | Verified | Rendering without moving the playhead |
+| `PrvExport` handle | Completed | Verified | Because dither has state, and the state is the whole subtlety |
+| `PRVKit::WaveWriter` | Completed | **Verified on Linux** | Written by hand so it compiles and is tested on every commit |
+| `PRVKit::Session::export` | Completed | **Verified on Linux** | Real files written and read back, twelve tests |
+| ABI minor version 1.13 | Completed | Verified | Calls added, nothing existing moved |
+
+**Where the line falls.** The core decides how a floating-point sample becomes
+sixteen bits — that involves dither, it involves what happens above full scale,
+and it is audible when wrong. The host puts a header on the result. A WAVE header
+is forty-four bytes of arithmetic that no audio decision depends on, which is
+exactly the kind of thing ADR-0001 puts outside.
+
+**The header is written by hand rather than through AVFoundation**, deliberately.
+`AVAudioFile` would do the same job and would join the four types nothing has
+ever compiled — and export is the feature where a silent mistake produces a file
+somebody hands to a club.
+
+**Dither is a handle, not a function, and that is the point.** Dither works
+because the noise differs from sample to sample. A per-block function restarts
+its noise at the same place every block, and a pattern repeating every 512
+samples at 48 kHz is not noise: it is a tone at ninety-four hertz sitting under
+the whole export. So the state crosses the boundary and a test asserts two
+consecutive blocks of silence differ.
+
+**Deterministic noise, which sounds like a contradiction and is not.** ADR-0006
+requires a render to be reproducible, so the noise is generated from a seed
+rather than sampled from anywhere. "Random" in dither means *decorrelated from
+the signal*, not *unpredictable* — different requirements, and only the first
+one matters.
+
+**Exporting is refused while playing.** Both paths share the engine's scratch
+buffer and its source, so two renders at once would interleave each other's
+audio — intermittently, which is the worst way to leave a fault available. The C
+host checks the refusal before stopping the transport, so the rule is verified
+rather than assumed.
+
+**A stopped export removes its file.** A partial set that looks finished is worse
+than no file: somebody plays it, hears it stop, and blames the set.
+
+### The enum that was almost declared twice
+
+`PrvBitDepth` was already in the header, emitted by the delivery calls with
+`PRV_DEPTH_SIXTEEN` at zero. Adding a second one for export would have produced
+a header with two `typedef enum PrvBitDepth` declarations — a C compilation
+error, caught here only because the header was regenerated and read.
+
+The tempting fix was to renumber from one, so that zero is never a depth. That is
+the better design and it was refused: renumbering changes the meaning of a call
+that already exists, which the ABI's major version forbids. The reasoning is
+recorded beside the code rather than left for somebody to rediscover.
+
+The same thing happened one layer up: Swift's `BitDepth` already existed in
+`Delivery.swift`. Deciding what depth to deliver at and writing at that depth are
+two halves of one question, and a second enum would have been a second place for
+the halves to disagree.
+
 ### The privacy distinction the tests found
 
 A test was written asserting that a purpose which sends no content also does not

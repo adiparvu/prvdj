@@ -37,6 +37,7 @@
 //! | [`target`] | Where is this going, and what does that place require? |
 //! | [`report`] | Does the mix meet it, and if not, what would? |
 //! | [`manifest`] | What went into the mix, and can it be made again? |
+//! | [`quantise`] | How does a rendered sample become the bytes a file holds? |
 //!
 //! # Example
 //!
@@ -67,9 +68,11 @@
 //! ```
 
 pub mod manifest;
+pub mod quantise;
 pub mod report;
 pub mod target;
 
 pub use manifest::{Entry, Manifest};
+pub use quantise::{bytes_per_sample, QuantiseError, Quantiser};
 pub use report::{gain_to_fit_ceiling, report, Compliance, ExportReport};
 pub use target::{BitDepth, DeliveryTarget, Format};

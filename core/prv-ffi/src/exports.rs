@@ -21,6 +21,7 @@ use crate::collection::Collection;
 use crate::delivery::Delivery;
 use crate::engine::{Engine, ReadAudio};
 use crate::experience::Experience;
+use crate::exporting::Export;
 use crate::guard::{as_mut, as_ref, buffer_capacity, guarded_try, readable, writable};
 use crate::mapping::event_from_code;
 use crate::planning::Planner;
@@ -799,6 +800,218 @@ pub unsafe extern "C" fn prv_engine_promote_carried(
         let promoted = unsafe { as_mut(engine) }?.promote_carried()?;
         // SAFETY: as above.
         *unsafe { as_mut(out_promoted) }? = promoted;
+        Ok(())
+    })
+    .code()
+}
+
+// ---------------------------------------------------------------------------
+// Getting a set out as a file
+//
+// The core produces the sample bytes; the host puts a header on them and writes
+// them somewhere. That split is ADR-0001, and it is also where the line falls
+// naturally: how a floating-point sample becomes sixteen bits involves dither
+// and clipping and is audible when wrong, while a WAVE header is forty-four
+// bytes of arithmetic that no audio decision depends on.
+// ---------------------------------------------------------------------------
+
+/// Renders one block from a stated position, without moving the playhead.
+///
+/// What an export uses. Rendering is a pure function of the project and a
+/// position; the transport merely holds a position while somebody listens, and
+/// an export has no need of it. Using it would mean dragging the user's playhead
+/// through their set to write a file and then putting it back.
+///
+/// Refused while the transport is playing: both paths use the same scratch
+/// buffer and the same source, so two renders at once would interleave each
+/// other's audio — intermittently, which is the worst way to leave a fault
+/// available.
+///
+/// # Safety
+///
+/// `engine` must be live and `planar` writable for `channels * frames` floats.
+#[no_mangle]
+pub unsafe extern "C" fn prv_engine_render_at(
+    engine: *mut Engine,
+    position: i64,
+    planar: *mut f32,
+    channels: u32,
+    frames: u32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let engine = unsafe { as_mut(engine) }?;
+        if planar.is_null() {
+            return Err(Status::NullPointer);
+        }
+        if channels == 0 || frames == 0 {
+            return Err(Status::InvalidArgument);
+        }
+        let channel_count = usize::try_from(channels).unwrap_or(0);
+        let frame_count = usize::try_from(frames).unwrap_or(0);
+        let total = channel_count
+            .checked_mul(frame_count)
+            .ok_or(Status::InvalidArgument)?;
+
+        // SAFETY: the caller promises `planar` is writable for exactly this many
+        // floats. The slice is used only within this call.
+        let samples = unsafe { core::slice::from_raw_parts_mut(planar, total) };
+        engine.render_at(position, samples, channel_count, frame_count)
+    })
+    .code()
+}
+
+/// Begins an export at a depth, returning the handle that carries its dither.
+///
+/// The handle exists because dither has state. A per-block function would
+/// restart its noise every block, and a pattern repeating every 512 samples at
+/// 48 kHz is a tone at ninety-four hertz under the whole file.
+///
+/// `seed` makes it reproducible: the same project and the same seed produce the
+/// same file, byte for byte.
+///
+/// # Safety
+///
+/// `out_export` must be a valid, writable pointer to a single pointer.
+#[no_mangle]
+pub unsafe extern "C" fn prv_export_begin(
+    depth: i32,
+    dither: i32,
+    seed: u64,
+    channels: u32,
+    out_export: *mut *mut Export,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let slot = unsafe { as_mut(out_export) }?;
+        *slot = core::ptr::null_mut();
+
+        let export = Export::new(depth, dither != 0, seed, channels)?;
+        *slot = Box::into_raw(Box::new(export));
+        Ok(())
+    })
+    .code()
+}
+
+/// Ends an export. NULL is accepted and does nothing.
+///
+/// # Safety
+///
+/// `export` must be a pointer from [`prv_export_begin`], not yet destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn prv_export_destroy(export: *mut Export) {
+    if export.is_null() {
+        return;
+    }
+    let _ = crate::guard::guarded(|| {
+        // SAFETY: the caller's documented contract.
+        drop(unsafe { Box::from_raw(export) });
+        Status::Ok
+    });
+}
+
+/// How many bytes a block of `frames` will produce.
+///
+/// Ask once and allocate once: the answer does not change during an export.
+///
+/// # Safety
+///
+/// `export` must be live and `out_bytes` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_export_block_bytes(
+    export: *const Export,
+    frames: u32,
+    out_bytes: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let bytes = unsafe { as_ref(export) }?.block_bytes(frames);
+        // SAFETY: as above.
+        *unsafe { as_mut(out_bytes) }? = bytes;
+        Ok(())
+    })
+    .code()
+}
+
+/// Converts one rendered block into the bytes a file holds.
+///
+/// `planar` is channel-major, as `prv_engine_render_at` produced it. The output
+/// is interleaved and little-endian, which is what every uncompressed container
+/// holds.
+///
+/// # Safety
+///
+/// `export` must be live, `planar` readable for `channels * frames` floats,
+/// `into` writable for `capacity` bytes, and `out_written` writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_export_block(
+    export: *mut Export,
+    planar: *const f32,
+    frames: u32,
+    into: *mut u8,
+    capacity: u64,
+    out_written: *mut u64,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let export = unsafe { as_mut(export) }?;
+        if planar.is_null() {
+            return Err(Status::NullPointer);
+        }
+        let frame_count = usize::try_from(frames).map_err(|_| Status::InvalidArgument)?;
+        let samples = usize::try_from(export.block_bytes(frames))
+            .map_err(|_| Status::InvalidArgument)?
+            .checked_div(usize::try_from(export.sample_width()).unwrap_or(1))
+            .ok_or(Status::InvalidArgument)?;
+
+        // SAFETY: the caller promises `planar` is readable for this many floats.
+        let source = unsafe { core::slice::from_raw_parts(planar, samples) };
+        // SAFETY: as above, for the output.
+        let buffer = unsafe { writable(into, capacity) }?;
+
+        let written = export.block(source, frame_count, buffer)?;
+        // SAFETY: the caller's documented contract.
+        *unsafe { as_mut(out_written) }? = written.try_into().unwrap_or(u64::MAX);
+        Ok(())
+    })
+    .code()
+}
+
+/// What the export has produced and what it had to do to get there.
+///
+/// `out_clipped` is non-zero when the mix exceeded full scale and was limited.
+/// That is worth telling the user: nothing in this system is applied silently,
+/// and clamping is something applied.
+///
+/// `out_dithered` reports what actually happened rather than what was asked
+/// for — dither into a floating-point file is refused, and an export screen
+/// should say so.
+///
+/// # Safety
+///
+/// `export` must be live and every out-pointer writable.
+#[no_mangle]
+pub unsafe extern "C" fn prv_export_status(
+    export: *const Export,
+    out_written: *mut u64,
+    out_clipped: *mut u64,
+    out_dithered: *mut i32,
+    out_sample_width: *mut u32,
+    out_is_float: *mut i32,
+) -> i32 {
+    guarded_try(|| {
+        // SAFETY: the caller's documented contract.
+        let export = unsafe { as_ref(export) }?;
+        // SAFETY: as above.
+        *unsafe { as_mut(out_written) }? = export.written();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_clipped) }? = export.clipped();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_dithered) }? = i32::from(export.is_dithering());
+        // SAFETY: as above.
+        *unsafe { as_mut(out_sample_width) }? = export.sample_width();
+        // SAFETY: as above.
+        *unsafe { as_mut(out_is_float) }? = i32::from(export.is_float());
         Ok(())
     })
     .code()

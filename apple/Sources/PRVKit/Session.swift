@@ -126,6 +126,16 @@ public final class Session {
     /// The sample rate everything runs at.
     public let sampleRate: UInt32
 
+    /// How many channels the engine mixes in.
+    public let channels: Int
+
+    /// The largest block the engine was built for.
+    ///
+    /// An export asks for big blocks — fewer calls for the same audio — and the
+    /// engine refuses anything past what it prepared for, so the exporter has to
+    /// know the ceiling rather than discover it as a failure.
+    public let maxBlockFrames: Int
+
     /// Tracks the session knows about, in the order they were imported.
     public private(set) var library: [MediaItem] = []
 
@@ -172,6 +182,8 @@ public final class Session {
         output: AudioOutput? = nil
     ) throws {
         self.sampleRate = sampleRate
+        self.channels = channels
+        self.maxBlockFrames = maxBlockFrames
         self.decoder = decoder
         self.output = output
         engine = try Engine(
@@ -302,6 +314,102 @@ public final class Session {
     /// engine through the session, which is what keeps the session able to
     /// refresh its own view of things.
     var engineForTesting: Engine { engine }
+
+    // MARK: - Getting the set out
+
+    /// Renders the whole set to a WAVE file.
+    ///
+    /// # Why this is a loop here rather than a call into the core
+    ///
+    /// The core renders one block from one position and produces the bytes a
+    /// file holds. Which positions, how many, and where the file goes are the
+    /// host's — and keeping the loop here is what lets it be interrupted,
+    /// reported on, and run off the main thread without the core knowing what a
+    /// thread is.
+    ///
+    /// # Not while playing
+    ///
+    /// The engine refuses. Both paths share a scratch buffer and a source, and
+    /// two renders at once would interleave each other's audio — intermittently,
+    /// which is the worst way to leave a fault available.
+    ///
+    /// - Parameter progress: called with a fraction from zero to one. Returning
+    ///   `false` stops the export and removes the partial file, because a
+    ///   half-written set that looks finished is worse than no file.
+    @discardableResult
+    public func export(
+        to url: URL,
+        depth: BitDepth = .twentyFour,
+        dither: Bool = true,
+        seed: UInt64 = 1,
+        blockFrames: Int = 4_096,
+        progress: (Double) -> Bool = { _ in true }
+    ) throws -> ExportOutcome {
+        let total = try snapshot().duration
+        guard total > 0 else {
+            throw PlatformError.unsupportedFormat("there is nothing to export")
+        }
+        let frames = max(1, min(blockFrames, maxBlockFrames))
+
+        let export = try Export(
+            depth: depth,
+            dither: dither,
+            seed: seed,
+            channels: UInt32(channels)
+        )
+        let outcome = try export.outcome()
+        let writer = try WaveWriter(
+            url: url,
+            channels: UInt32(channels),
+            sampleRate: sampleRate,
+            sampleWidth: outcome.sampleWidth,
+            isFloat: outcome.isFloat
+        )
+
+        var planar = [Float](repeating: 0, count: channels * frames)
+        var position: Int64 = 0
+        var cancelled = false
+
+        while position < total {
+            // The last block is short. Rendering a whole one and trimming would
+            // put up to a block of silence on the end of every export.
+            let remaining = Int(min(Int64(frames), total - position))
+
+            do {
+                try planar.withUnsafeMutableBufferPointer { buffer in
+                    // Cleared first: the renderer writes only what it has, and a
+                    // gap in the set would otherwise replay the previous block.
+                    buffer.update(repeating: 0)
+                    try engine.render(
+                        at: position,
+                        into: buffer,
+                        channels: channels,
+                        frames: remaining
+                    )
+                }
+                try writer.append(export.block(planar, frames: UInt32(remaining)))
+            } catch {
+                try? writer.finish()
+                try? FileManager.default.removeItem(at: url)
+                throw error
+            }
+
+            position += Int64(remaining)
+            if !progress(Double(position) / Double(total)) {
+                cancelled = true
+                break
+            }
+        }
+
+        try writer.finish()
+        if cancelled {
+            // A partial file that looks finished is worse than no file: somebody
+            // will play it, hear it stop, and blame the set.
+            try? FileManager.default.removeItem(at: url)
+            throw PlatformError.unsupportedFormat("the export was stopped")
+        }
+        return try export.outcome()
+    }
 
     // MARK: - Keeping the work
 

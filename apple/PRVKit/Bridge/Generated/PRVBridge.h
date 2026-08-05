@@ -29,7 +29,7 @@ extern "C" {
 
 /* The version this header describes. */
 #define PRV_ABI_MAJOR 1
-#define PRV_ABI_MINOR 12
+#define PRV_ABI_MINOR 13
 #define PRV_ABI_PATCH 0
 
 /* The result of a call. Zero is success, and it is the only success. */
@@ -228,6 +228,11 @@ typedef struct PrvDelivery PrvDelivery;
 
 /* How the application behaves, and what it has queued to say. */
 typedef struct PrvExperience PrvExperience;
+
+/* One export in progress. Opaque because it carries the dither's state: a
+ * per-block function would restart its noise every block, which is a tone
+ * rather than dither. */
+typedef struct PrvExport PrvExport;
 
 /* Where synchronisation is, and what has not gone yet. Belongs to an
  * installation rather than to a project: a user with three projects open is
@@ -662,6 +667,71 @@ int32_t prv_engine_promote_carried(PrvEngine *engine, uint64_t *out_promoted);
  * one open while replanning.
  */
 int32_t prv_planner_create(PrvPlanner **out_planner);
+
+/*
+ * Renders one block from a stated position, without moving the playhead.
+ *
+ * What an export uses. Rendering is a pure function of the project and a
+ * position; the transport merely holds a position while somebody listens.
+ * Using it would mean dragging the user's playhead through their set to
+ * write a file and then putting it back.
+ *
+ * Refused while playing: both paths share a scratch buffer and a source,
+ * so two renders at once would interleave each other's audio.
+ */
+int32_t prv_engine_render_at(PrvEngine *engine, int64_t position, float *planar,
+                             uint32_t channels, uint32_t frames);
+
+/*
+ * Begins an export, returning the handle that carries its dither.
+ *
+ * The handle exists because dither has state. A per-block function would
+ * restart its noise every block, and a pattern repeating every 512
+ * samples at 48 kHz is a tone at ninety-four hertz under the whole file.
+ *
+ * seed makes it reproducible: the same project and the same seed produce
+ * the same file, byte for byte.
+ */
+int32_t prv_export_begin(int32_t depth, int32_t dither, uint64_t seed, uint32_t channels,
+                         PrvExport **out_export);
+
+/*
+ * Ends an export. NULL is accepted and does nothing.
+ */
+void prv_export_destroy(PrvExport *export_handle);
+
+/*
+ * How many bytes a block of this many frames will produce.
+ *
+ * Ask once and allocate once: the answer does not change.
+ */
+int32_t prv_export_block_bytes(const PrvExport *export_handle, uint32_t frames,
+                               uint64_t *out_bytes);
+
+/*
+ * Converts one rendered block into the bytes a file holds.
+ *
+ * planar is channel-major, as prv_engine_render_at produced it. The
+ * output is interleaved and little-endian, which is what every
+ * uncompressed container holds.
+ */
+int32_t prv_export_block(PrvExport *export_handle, const float *planar, uint32_t frames,
+                         uint8_t *into, uint64_t capacity, uint64_t *out_written);
+
+/*
+ * What the export produced, and what it had to do to get there.
+ *
+ * out_clipped is non-zero when the mix exceeded full scale and was
+ * limited. Tell the user: nothing here is applied silently, and clamping
+ * is something applied.
+ *
+ * out_dithered reports what happened rather than what was asked for —
+ * dither into a floating-point file is refused, and an export screen
+ * should say so.
+ */
+int32_t prv_export_status(const PrvExport *export_handle, uint64_t *out_written,
+                          uint64_t *out_clipped, int32_t *out_dithered,
+                          uint32_t *out_sample_width, int32_t *out_is_float);
 
 /*
  * Creates a synchronisation state: offline, with nothing waiting.

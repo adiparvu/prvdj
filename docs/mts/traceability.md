@@ -83,7 +83,15 @@ did not have would be worse than no row at all.
 | The render honours where a clip begins in its media | MP#3C, MP#21 | `prv-render::Renderer` | `the_source_offset_says_which_part_of_the_media_is_heard`, `overlapping_placements_sum` | **Verified** |
 | An export knows what it could not read | MP#3C | `prv-render::RenderReport` | `a_source_that_falls_short_is_reported_rather_than_silently_silent` | **Verified** |
 | Branching never loses work to a name collision | MP#9, MP#24 | `prv-project::OperationLog::branch_at` | `a_branch_never_reuses_a_name_the_trunk_already_gave_out`, `two_different_edits_under_one_name_are_reported_rather_than_dropped` | **Verified** |
-| Recording and encoding | MP#3A | — | needs a file and an encoder, both outside the core | Not started |
+| A set is written to a file a player can read | MP#3A, MP#3C | `PRVKit::Session::export`, `PRVKit::WaveWriter` | `an exported set is a file a player can read`, `the audio in the file is the audio of the set` | **Verified** |
+| The file is as long as the set, to the sample | MP#3C | `PRVKit::Session::export` | `the file is as long as the set, to the sample` | **Verified** |
+| An export is reproducible, dither and all | ADR-0006, MP#3C | `prv-export::Quantiser` | `the_same_mix_always_produces_the_same_file`, `the same set exported twice is the same file, dither and all` | **Verified** |
+| Dither does not repeat between blocks | MP#3A | `prv-export::Quantiser` | `dither_does_not_restart_between_blocks`, `the_noise_carries_across_blocks` | **Verified** |
+| Dither is refused where it would only add noise | MP#3A | `prv-export::Quantiser` | `dither_is_refused_where_it_would_only_add_noise`, `a float export says it is float, and is not dithered` | **Verified** |
+| Clipping on the way out is counted, not hidden | MP#3A, MP#13 | `prv-export::Quantiser::clipped` | `clipping_is_counted_rather_than_hidden` | **Verified** |
+| A stopped export leaves no file | MP#13 | `PRVKit::Session::export` | `stopping an export leaves no file rather than half a set` | **Verified** |
+| Exporting never runs beside playback | ADR-0002 | `prv-ffi::Engine::render_at` | the C host, which checks the refusal before stopping the transport | **Verified** |
+| Encoding to a lossy format | MP#3A | — | needs an encoder, which is the platform's | Not started |
 
 ## Musical intelligence
 

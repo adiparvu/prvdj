@@ -153,6 +153,29 @@ fn declarations() -> Vec<Declaration> {
         prv_ffi::exports::prv_engine_log_length;
     let _: unsafe extern "C" fn(*const prv_ffi::Engine, *mut u64) -> i32 =
         prv_ffi::exports::prv_engine_carried_count;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Engine, i64, *mut f32, u32, u32) -> i32 =
+        prv_ffi::exports::prv_engine_render_at;
+    let _: unsafe extern "C" fn(i32, i32, u64, u32, *mut *mut prv_ffi::Export) -> i32 =
+        prv_ffi::exports::prv_export_begin;
+    let _: unsafe extern "C" fn(*mut prv_ffi::Export) = prv_ffi::exports::prv_export_destroy;
+    let _: unsafe extern "C" fn(*const prv_ffi::Export, u32, *mut u64) -> i32 =
+        prv_ffi::exports::prv_export_block_bytes;
+    let _: unsafe extern "C" fn(
+        *mut prv_ffi::Export,
+        *const f32,
+        u32,
+        *mut u8,
+        u64,
+        *mut u64,
+    ) -> i32 = prv_ffi::exports::prv_export_block;
+    let _: unsafe extern "C" fn(
+        *const prv_ffi::Export,
+        *mut u64,
+        *mut u64,
+        *mut i32,
+        *mut u32,
+        *mut i32,
+    ) -> i32 = prv_ffi::exports::prv_export_status;
     let _: unsafe extern "C" fn(*mut *mut prv_ffi::Sync) -> i32 = prv_ffi::exports::prv_sync_create;
     let _: unsafe extern "C" fn(*mut prv_ffi::Sync) = prv_ffi::exports::prv_sync_destroy;
     let _: unsafe extern "C" fn(*mut prv_ffi::Sync, i32) -> i32 = prv_ffi::exports::prv_sync_apply;
@@ -672,6 +695,76 @@ fn declarations() -> Vec<Declaration> {
                 "A separate handle from the engine, deliberately. A library and a plan",
                 "are not a project: a host may plan with no project open, and may keep",
                 "one open while replanning.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_engine_render_at(PrvEngine *engine, int64_t position, \
+                        float *planar, uint32_t channels, uint32_t frames)",
+            doc: &[
+                "Renders one block from a stated position, without moving the playhead.",
+                "",
+                "What an export uses. Rendering is a pure function of the project and a",
+                "position; the transport merely holds a position while somebody listens.",
+                "Using it would mean dragging the user's playhead through their set to",
+                "write a file and then putting it back.",
+                "",
+                "Refused while playing: both paths share a scratch buffer and a source,",
+                "so two renders at once would interleave each other's audio.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_export_begin(int32_t depth, int32_t dither, uint64_t seed, \
+                        uint32_t channels, PrvExport **out_export)",
+            doc: &[
+                "Begins an export, returning the handle that carries its dither.",
+                "",
+                "The handle exists because dither has state. A per-block function would",
+                "restart its noise every block, and a pattern repeating every 512",
+                "samples at 48 kHz is a tone at ninety-four hertz under the whole file.",
+                "",
+                "seed makes it reproducible: the same project and the same seed produce",
+                "the same file, byte for byte.",
+            ],
+        },
+        Declaration {
+            signature: "void prv_export_destroy(PrvExport *export_handle)",
+            doc: &["Ends an export. NULL is accepted and does nothing."],
+        },
+        Declaration {
+            signature: "int32_t prv_export_block_bytes(const PrvExport *export_handle, \
+                        uint32_t frames, uint64_t *out_bytes)",
+            doc: &[
+                "How many bytes a block of this many frames will produce.",
+                "",
+                "Ask once and allocate once: the answer does not change.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_export_block(PrvExport *export_handle, const float *planar, \
+                        uint32_t frames, uint8_t *into, uint64_t capacity, \
+                        uint64_t *out_written)",
+            doc: &[
+                "Converts one rendered block into the bytes a file holds.",
+                "",
+                "planar is channel-major, as prv_engine_render_at produced it. The",
+                "output is interleaved and little-endian, which is what every",
+                "uncompressed container holds.",
+            ],
+        },
+        Declaration {
+            signature: "int32_t prv_export_status(const PrvExport *export_handle, \
+                        uint64_t *out_written, uint64_t *out_clipped, int32_t *out_dithered, \
+                        uint32_t *out_sample_width, int32_t *out_is_float)",
+            doc: &[
+                "What the export produced, and what it had to do to get there.",
+                "",
+                "out_clipped is non-zero when the mix exceeded full scale and was",
+                "limited. Tell the user: nothing here is applied silently, and clamping",
+                "is something applied.",
+                "",
+                "out_dithered reports what happened rather than what was asked for —",
+                "dither into a floating-point file is refused, and an export screen",
+                "should say so.",
             ],
         },
         Declaration {
@@ -1645,6 +1738,11 @@ typedef struct PrvDelivery PrvDelivery;
 
 /* How the application behaves, and what it has queued to say. */
 typedef struct PrvExperience PrvExperience;
+
+/* One export in progress. Opaque because it carries the dither's state: a
+ * per-block function would restart its noise every block, which is a tone
+ * rather than dither. */
+typedef struct PrvExport PrvExport;
 
 /* Where synchronisation is, and what has not gone yet. Belongs to an
  * installation rather than to a project: a user with three projects open is

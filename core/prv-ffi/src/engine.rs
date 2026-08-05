@@ -973,6 +973,29 @@ impl Engine {
         channels: usize,
         frames: usize,
     ) -> Result<(), Status> {
+        // Every check the block needs is `render_block`'s, and doing them twice
+        // on the audio thread buys nothing.
+        let position = Frames::new(self.transport.snapshot().position.get());
+        self.render_block(position, samples, channels, frames)?;
+
+        if self.transport.state().is_rendering() {
+            self.transport.advance(u32::try_from(frames).unwrap_or(0));
+        }
+        Ok(())
+    }
+
+    /// The render both paths share.
+    ///
+    /// Extracted when export arrived rather than duplicated: the copy-out below
+    /// has a subtlety about row strides that was got wrong once already, and two
+    /// copies of it would be two chances to get it wrong again.
+    fn render_block(
+        &mut self,
+        position: Frames,
+        samples: &mut [f32],
+        channels: usize,
+        frames: usize,
+    ) -> Result<(), Status> {
         if !self.prepared {
             return Err(Status::InvalidState);
         }
@@ -986,7 +1009,6 @@ impl Engine {
             return Err(Status::BufferTooSmall);
         }
 
-        let position = Frames::new(self.transport.snapshot().position.get());
         self.renderer.render(
             &self.state,
             position,
@@ -1010,11 +1032,47 @@ impl Engine {
             let into = samples.get_mut(start..end).ok_or(Status::BufferTooSmall)?;
             into.copy_from_slice(from);
         }
-
-        if self.transport.state().is_rendering() {
-            self.transport.advance(u32::try_from(frames).unwrap_or(0));
-        }
         Ok(())
+    }
+
+    /// Renders one block from a stated position, without touching the
+    /// transport.
+    ///
+    /// # Why exporting is not playing quickly
+    ///
+    /// Rendering is a pure function of the project and a position — the renderer
+    /// takes both and produces samples. The transport is only the thing that
+    /// *holds* a position while somebody listens. An export has no need of it,
+    /// and using it would mean moving the user's playhead through their set to
+    /// write a file, then putting it back.
+    ///
+    /// So this takes the position as an argument and leaves the transport alone.
+    /// The caller keeps the position, which it has to anyway in order to know
+    /// when it has reached the end.
+    ///
+    /// # Not while playing
+    ///
+    /// Refused when the transport is rendering, because both paths use the same
+    /// scratch buffer and the same source. Two renders at once would interleave
+    /// each other's audio, and the failure would be intermittent — which is the
+    /// worst kind to leave available.
+    ///
+    /// # Errors
+    ///
+    /// [`Status::InvalidState`] if the engine was never prepared or the
+    /// transport is playing, and [`Status::InvalidArgument`] for a block larger
+    /// than the engine was built for.
+    pub fn render_at(
+        &mut self,
+        position: i64,
+        samples: &mut [f32],
+        channels: usize,
+        frames: usize,
+    ) -> Result<(), Status> {
+        if self.transport.state().is_rendering() {
+            return Err(Status::InvalidState);
+        }
+        self.render_block(Frames::new(position), samples, channels, frames)
     }
 
     /// Whether every placement the last render touched was read in full.

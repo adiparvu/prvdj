@@ -491,6 +491,56 @@ int main(void) {
     CHECK(after_adding == reopened_clips + 1, "adding a clip overwrote a saved one");
     prv_engine_destroy(reopened);
 
+    /* Getting the set out: render from a position, quantise, and the host would
+     * put a header on it.
+     *
+     * The transport is stopped first, and the engine insists on it: both paths
+     * share a scratch buffer and a source, so exporting while playing would
+     * interleave the two. */
+    CHECK(prv_engine_render_at(engine, 0, block, 2, 128) == PRV_INVALID_STATE,
+          "an export was allowed to run while the transport was playing");
+    CHECK(prv_engine_transport(engine, PRV_EVENT_STOP) == PRV_OK, "stop refused");
+
+    PrvExport *export_handle = NULL;
+    CHECK(prv_export_begin(PRV_DEPTH_TWENTY_FOUR, 1, 42, 2, &export_handle) == PRV_OK,
+          "the export would not begin");
+
+    uint64_t block_bytes = 0;
+    CHECK(prv_export_block_bytes(export_handle, 128, &block_bytes) == PRV_OK,
+          "the block size could not be read");
+    CHECK(block_bytes == 128 * 2 * 3, "a 24-bit stereo block is not the size it should be");
+
+    float rendered[2 * 128];
+    memset(rendered, 0, sizeof rendered);
+    CHECK(prv_engine_render_at(engine, 0, rendered, 2, 128) == PRV_OK,
+          "the offline render failed");
+
+    uint8_t audio[2 * 128 * 3];
+    uint64_t produced = 0;
+    CHECK(prv_export_block(export_handle, rendered, 128, audio, sizeof audio, &produced) == PRV_OK,
+          "the block could not be quantised");
+    CHECK(produced == block_bytes, "the block produced a different size than promised");
+
+    uint64_t export_written = 0, export_clipped = 0;
+    int32_t export_dithered = 0, export_is_float = 0;
+    uint32_t export_width = 0;
+    CHECK(prv_export_status(export_handle, &export_written, &export_clipped, &export_dithered,
+                            &export_width, &export_is_float) == PRV_OK,
+          "the export status could not be read");
+    CHECK(export_written == produced, "the export lost count of what it wrote");
+    CHECK(export_width == 3, "24 bits is not three bytes");
+    CHECK(export_is_float == 0, "an integer export claimed to be float");
+    CHECK(export_dithered != 0, "dither was asked for at 24 bits and not applied");
+
+    /* A depth this version does not define is refused, not guessed at. */
+    PrvExport *doomed_export = (PrvExport *)0x1234;
+    CHECK(prv_export_begin(99, 0, 1, 2, &doomed_export) == PRV_INVALID_ARGUMENT,
+          "an undefined bit depth was accepted");
+    CHECK(doomed_export == NULL, "a failed begin left a dangling pointer");
+
+    prv_export_destroy(export_handle);
+    prv_export_destroy(NULL);
+
     /* Null is refused rather than dereferenced. */
     CHECK(prv_engine_transport(NULL, PRV_EVENT_PLAY) == PRV_NULL_POINTER,
           "a null handle was dereferenced");
